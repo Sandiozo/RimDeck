@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/Sandiozo/RimDeck/discussions
+    about: Ask how to do something, share your setup, or float an idea before filing a request.
+  - name: A mod's own bug
+    url: https://steamcommunity.com/app/294100/workshop/
+    about: Problems inside a specific mod belong on that mod's Workshop page.

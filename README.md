@@ -2,9 +2,11 @@
 
 <img src="docs/banner.jpg" alt="RimDeck" width="100%">
 
-### A fast mod manager for RimWorld 1.7
+### A fast RimWorld mod manager and load order sorter
 
-Auto-sort with explanations · live problem checks · texture and research analysis · one-click Workshop downloads
+Auto-sort with explanations · live problem checks · texture and research analysis · mod settings without the game · one-click Workshop downloads
+
+<sub>Free and open source · a modern alternative to RimSort and RimPy · RimWorld 1.4 to 1.7 · Windows</sub>
 
 <br>
 
@@ -13,12 +15,12 @@ Auto-sort with explanations · live problem checks · texture and research analy
 <br>
 
 <a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sandiozo/RimDeck?style=flat-square&label=release&color=d8742b"></a>
-<a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=b58cff"></a>
-<img alt="RimWorld 1.7" src="https://img.shields.io/badge/RimWorld-1.7-f5b544?style=flat-square">
-<img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-3ecf8e?style=flat-square">
-<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Sandiozo/RimDeck?style=flat-square&color=9aa3b2"></a>
+<a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=6f9fc4"></a>
+<img alt="RimWorld 1.7" src="https://img.shields.io/badge/RimWorld-1.7-e2a83e?style=flat-square">
+<img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-8fb854?style=flat-square">
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Sandiozo/RimDeck?style=flat-square&color=a39e94"></a>
 
-<sub><a href="#install">Install</a> &nbsp;•&nbsp; <a href="#screenshots">Screenshots</a> &nbsp;•&nbsp; <a href="#what-it-does">Features</a> &nbsp;•&nbsp; <a href="docs/FEATURES.md">Full reference</a> &nbsp;•&nbsp; <a href="#build-from-source">Build</a></sub>
+<sub><a href="#install">Install</a> &nbsp;•&nbsp; <a href="#screenshots">Screenshots</a> &nbsp;•&nbsp; <a href="#what-it-does">Features</a> &nbsp;•&nbsp; <a href="docs/FEATURES.md">Full reference</a> &nbsp;•&nbsp; <a href="#build-from-source">Build</a> &nbsp;•&nbsp; <a href="https://github.com/Sandiozo/RimDeck/discussions">Discussions</a></sub>
 
 <br><br>
 
@@ -76,6 +78,10 @@ npm install
 npm run dev        # run with hot reload
 npm run dist       # build the installer into release/
 ```
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md), or ask in [Discussions](https://github.com/Sandiozo/RimDeck/discussions). If RimDeck saves you time, a ⭐ helps other players find it.
 
 ## License
 

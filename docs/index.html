@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RimDeck — RimWorld Mod Manager and Load Order Sorter</title>
+  <meta name="description" content="RimDeck is a free, open-source RimWorld mod manager for Windows: auto-sort with an explanation for every move, live problem checks, texture conflicts, a research tree, mod settings without starting the game, and Workshop downloads. A modern alternative to RimSort.">
+  <meta name="keywords" content="RimWorld mod manager, RimWorld load order, RimSort alternative, RimPy alternative, RimWorld mods, load order sorter, RimWorld 1.7, Steam Workshop">
+  <link rel="canonical" href="https://sandiozo.github.io/RimDeck/">
+  <link rel="icon" type="image/png" href="icon-64.png">
+  <meta name="theme-color" content="#15181b">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="RimDeck — a fast RimWorld mod manager">
+  <meta property="og:description" content="Auto-sort that explains itself, live problem checks, texture conflicts, research tree and mod settings without the game. Free and open source.">
+  <meta property="og:url" content="https://sandiozo.github.io/RimDeck/">
+  <meta property="og:image" content="https://sandiozo.github.io/RimDeck/social-preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "RimDeck",
+    "description": "A fast, open-source mod manager and load order sorter for RimWorld.",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Windows 10, Windows 11",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://sandiozo.github.io/RimDeck/",
+    "downloadUrl": "https://github.com/Sandiozo/RimDeck/releases/latest",
+    "author": { "@type": "Person", "name": "Sandis", "url": "https://github.com/Sandiozo" }
+  }
+  </script>
+  <style>
+    /* Steel and rust, like the app. */
+    :root {
+      --bg: #0f1113;
+      --bg-1: #15181b;
+      --bg-2: #1b1f23;
+      --line: #2e343a;
+      --line-2: #3d454c;
+      --text: #ece6da;
+      --text-2: #b3ada2;
+      --text-3: #7f7b73;
+      --accent: #d9792b;
+      --accent-text: #e8914a;
+      --on-accent: #1a0f06;
+      --steel: #4f7a99;
+      --glow: rgb(79 122 153 / 0.14);
+      --shadow: 0 24px 60px -20px rgb(0 0 0 / 0.75);
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #e9e3d7;
+        --bg-1: #f3eee5;
+        --bg-2: #faf7f1;
+        --line: #d6cdbd;
+        --line-2: #b6aa95;
+        --text: #25211b;
+        --text-2: #4d473d;
+        --text-3: #7a7265;
+        --accent-text: #9c5016;
+        --steel: #3f6a8a;
+        --glow: rgb(217 121 43 / 0.1);
+        --shadow: 0 24px 60px -24px rgb(70 55 30 / 0.4);
+        color-scheme: light;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 70% -10%, var(--glow), transparent 70%), var(--bg);
+      color: var(--text);
+      font: 16px/1.6 Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent-text); }
+    img { max-width: 100%; display: block; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+    header.top { display: flex; align-items: center; gap: 12px; padding: 18px 0; }
+    header.top img { width: 34px; height: 34px; }
+    header.top b { font-size: 18px; letter-spacing: 0.2px; }
+    header.top nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
+    header.top nav a { color: var(--text-2); text-decoration: none; font-size: 14px; }
+    header.top nav a:hover { color: var(--text); }
+
+    .hero { text-align: center; padding: 48px 0 28px; }
+    .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent-text); }
+    h1 { font-size: clamp(32px, 5.4vw, 56px); line-height: 1.08; letter-spacing: -1px; margin: 12px auto 16px; max-width: 840px; }
+    .lead { font-size: clamp(16px, 2vw, 19px); color: var(--text-2); max-width: 700px; margin: 0 auto; }
+    .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 30px 0 10px; }
+
+    /* Stamped plates with clipped corners, like the app's main buttons. */
+    .btn {
+      --cut: 9px;
+      display: inline-flex; align-items: center; gap: 10px;
+      height: 50px; padding: 0 26px;
+      font-weight: 700; font-size: 14px; letter-spacing: 0.8px; text-transform: uppercase;
+      text-decoration: none; color: var(--on-accent);
+      background: linear-gradient(180deg, #ec9a55 0%, var(--accent) 48%, #ad5f22 100%);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), inset 0 -3px 0 rgb(0 0 0 / 0.22);
+      clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+      transition: filter 0.15s, transform 0.1s;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:active { transform: translateY(1px); }
+    .btn.ghost {
+      color: var(--text); clip-path: none; border-radius: 6px;
+      background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+      border: 1px solid var(--line-2);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+      text-transform: none; letter-spacing: 0; font-weight: 600;
+    }
+    .meta { font-size: 13px; color: var(--text-3); }
+
+    .shot { margin: 34px auto 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2); box-shadow: var(--shadow); }
+
+    section { padding: 64px 0 8px; }
+    h2 { font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-2); margin: 0 0 22px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+    .card { background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; padding: 18px 18px 16px; }
+    .card h3 { margin: 0 0 6px; font-size: 16px; }
+    .card h3::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 9px; background: var(--accent); transform: rotate(45deg) translateY(-2px); }
+    .card p { margin: 0; color: var(--text-2); font-size: 14.5px; }
+
+    .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+    .gallery figure { margin: 0; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .gallery figcaption { padding: 10px 14px; font-size: 13.5px; color: var(--text-2); }
+
+    ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+    ol.steps li { counter-increment: s; display: flex; gap: 14px; align-items: baseline; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; color: var(--text-2); }
+    ol.steps li::before { content: counter(s); flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 13px; }
+    ol.steps b { color: var(--text); }
+
+    footer { padding: 56px 0 40px; color: var(--text-3); font-size: 14px; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 64px; }
+    footer a { color: var(--text-2); }
+
+    @media (max-width: 640px) {
+      header.top nav { display: none; }
+      .hero { padding-top: 24px; }
+      .btn { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <img src="icon-128.png" alt="">
+      <b>RimDeck</b>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/Sandiozo/RimDeck">GitHub</a>
+      </nav>
+    </header>
+
+    <div class="hero">
+      <div class="eyebrow">RimWorld mod manager · free and open source</div>
+      <h1>Sort, fix and play your RimWorld mods, with every move explained</h1>
+      <p class="lead">RimDeck is a fast load order manager for RimWorld 1.4 to 1.7. It scans hundreds of mods in a blink, tells you exactly why each mod goes where it goes, finds problems before the game does, and starts you straight back into your colony.</p>
+      <div class="cta">
+        <a class="btn" id="download" href="https://github.com/Sandiozo/RimDeck/releases/latest">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          <span>Download for Windows</span>
+        </a>
+        <a class="btn ghost" href="https://github.com/Sandiozo/RimDeck">View on GitHub</a>
+      </div>
+      <div class="meta" id="release">Windows 10 and 11 · installer with automatic updates · MIT license</div>
+      <img class="shot" src="hero.jpg" alt="RimDeck showing an active load order, mod details and the research tree" width="1600" height="860">
+    </div>
+
+    <section id="features">
+      <h2>What it does</h2>
+      <div class="grid">
+        <div class="card"><h3>Explained auto-sort</h3><p>About.xml rules, dependencies, RimSort's community rules and rules inferred from XML patches, with the reason for every move. Nothing changes until you apply it.</p></div>
+        <div class="card"><h3>Problem checks</h3><p>Missing dependencies, broken load order rules, incompatibilities, duplicates and outdated mods with updated replacements, live as you edit.</p></div>
+        <div class="card"><h3>Continue</h3><p>One click saves your load order, starts RimWorld and opens your latest save as soon as the game has loaded.</p></div>
+        <div class="card"><h3>Mod settings without the game</h3><p>Edit any mod's settings with the labels, sliders and defaults from its own settings window, even ones you never changed.</p></div>
+        <div class="card"><h3>Texture conflicts</h3><p>See which mod's texture wins, compare side by side or as a pixel diff (DDS too), and pick single textures.</p></div>
+        <div class="card"><h3>Research tree and items</h3><p>Every mod's research on one zoomable tree, sorted by era if you like, and items that exist more than once.</p></div>
+        <div class="card"><h3>Game log and crash finder</h3><p>Errors grouped and pinned to the mods most likely responsible, plus a binary search that finds a broken mod in a few launches.</p></div>
+        <div class="card"><h3>Workshop and profiles</h3><p>Download mods and whole collections through SteamCMD with update checks, and keep separate profiles per game version.</p></div>
+        <div class="card"><h3>Safe by design</h3><p>RimDeck writes only ModsConfig.xml and the settings you edit, and backs them up first. Mod code is read, never run.</p></div>
+      </div>
+    </section>
+
+    <section id="screenshots">
+      <h2>Screenshots</h2>
+      <div class="gallery">
+        <figure><img src="screenshots/mods.png" alt="Load order with problem badges" loading="lazy"><figcaption>Load order with live problem badges</figcaption></figure>
+        <figure><img src="screenshots/sort.png" alt="Auto-sort preview with reasons" loading="lazy"><figcaption>Auto-sort, with the rule behind every move</figcaption></figure>
+        <figure><img src="screenshots/textures.png" alt="Texture conflict viewer" loading="lazy"><figcaption>Texture conflicts, side by side</figcaption></figure>
+        <figure><img src="screenshots/research.png" alt="Research tree across all mods" loading="lazy"><figcaption>Research tree across all mods</figcaption></figure>
+        <figure><img src="screenshots/problems.png" alt="Problems page" loading="lazy"><figcaption>Problems, with one-click fixes</figcaption></figure>
+        <figure><img src="screenshots/loadtime.png" alt="Load time report" loading="lazy"><figcaption>What makes the game load slowly</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="install">
+      <h2>Install</h2>
+      <ol class="steps">
+        <li><span>Download <b>RimDeck-Setup.exe</b> from the <a href="https://github.com/Sandiozo/RimDeck/releases/latest">latest release</a> and run it.</span></li>
+        <li><span>On first start, RimDeck finds RimWorld through Steam, or imports your RimSort folders and rules.</span></li>
+        <li><span>That's it. RimDeck <b>updates itself</b> when a new version comes out.</span></li>
+      </ol>
+    </section>
+
+    <footer>
+      <span>RimDeck is a fan project and is not affiliated with Ludeon Studios.</span>
+      <span><a href="https://github.com/Sandiozo/RimDeck/discussions">Questions and ideas</a> · <a href="https://github.com/Sandiozo/RimDeck/issues/new/choose">Report a bug</a> · <a href="https://github.com/Sandiozo/RimDeck/blob/main/LICENSE">MIT license</a></span>
+    </footer>
+  </div>
+
+  <script>
+    // Link straight to the newest installer and show its version; the release page is the fallback.
+    fetch('https://api.github.com/repos/Sandiozo/RimDeck/releases/latest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rel) => {
+        if (!rel) return
+        const exe = (rel.assets || []).find((a) => /\.exe$/i.test(a.name))
+        if (exe) document.getElementById('download').href = exe.browser_download_url
+        const date = new Date(rel.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+        document.getElementById('release').textContent = `Version ${rel.tag_name.replace(/^v/, '')} · released ${date} · Windows 10 and 11 · updates itself · MIT license`
+      })
+      .catch(() => {})
+  </script>
+</body>
+</html>

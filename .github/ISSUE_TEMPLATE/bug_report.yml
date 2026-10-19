@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in RimDeck doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! The more of this you can fill in, the faster it can be fixed.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+  - type: input
+    id: rimdeck
+    attributes:
+      label: RimDeck version
+      description: Shown next to the name in the title bar, e.g. 1.1.1
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: RimWorld version and number of active mods
+      placeholder: 1.7.4982, about 350 mods
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots or error text
+      description: A screenshot, the error message, or the relevant part of the game log (Game log page in RimDeck).

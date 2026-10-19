@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an idea or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the problem or the task, not only the solution. "I want to…"
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could RimDeck help?
+  - type: textarea
+    id: else
+    attributes:
+      label: Anything else
+      description: Other mod managers that do this well, screenshots, mockups.
