@@ -53,6 +53,12 @@ Auto-sort with explanations · live problem checks · texture and research analy
 | **Texture conflicts** — compare versions and pick per texture | **Research tree** — tidy, by era or in game positions, with problems flagged |
 | ![Items](docs/screenshots/items.png) | ![Load time](docs/screenshots/loadtime.png) |
 | **Items** — duplicate items added by several mods | **Load time** — measured startup phases and the heaviest mods |
+| ![Mod settings](docs/screenshots/settings-editor.png) | ![Mod settings list](docs/screenshots/modsettings.png) |
+| **Mod settings** — the game's labels, sliders and defaults, without starting the game | **Every mod with settings** — including ones never changed |
+| ![Saves](docs/screenshots/saves.png) | ![Light theme](docs/screenshots/light.png) |
+| **Saves and Continue** — see a save's mods, play it, or continue your latest one | **Light theme** — or dark, or follow Windows |
+| ![Problems](docs/screenshots/problems.png) | |
+| **Problems** — missing dependencies, conflicts and outdated mods, with one-click fixes | |
 
 ## What it does
 

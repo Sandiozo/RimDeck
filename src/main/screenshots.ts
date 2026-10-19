@@ -63,6 +63,47 @@ const SHOTS: { file: string; wait: number; script: string }[] = [
     wait: 1500,
     script: `document.querySelector('.rail-btn[title="Problems"]')?.click()`,
   },
+  {
+    file: 'modsettings.png',
+    wait: 2500,
+    script: `document.querySelector('.rail-btn[title="Mod settings"]')?.click()`,
+  },
+  {
+    // The editor on a mod whose window has labels, switches and sliders.
+    file: 'settings-editor.png',
+    wait: 2500,
+    script: `(async () => {
+      const input = document.querySelector('.page .pane-filter input')
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Animals Logic')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise(r => setTimeout(r, 400))
+      document.querySelector('.page table button.primary')?.click()
+    })()`,
+  },
+  {
+    file: 'saves.png',
+    wait: 3000,
+    script: `(async () => {
+      ;[...document.querySelectorAll('.modal-foot button')].find(b => b.textContent.trim() === 'Close')?.click()
+      document.querySelector('.rail-btn[title="Saves"]')?.click()
+      for (let i = 0; i < 40 && !document.querySelector('.page tr.click'); i++) await new Promise(r => setTimeout(r, 250))
+      document.querySelector('.page tr.click')?.click()
+    })()`,
+  },
+  {
+    // Light theme, shown without changing the saved setting.
+    file: 'light.png',
+    wait: 2500,
+    script: `(() => {
+      document.querySelector('.rail-btn[title="Mods"]')?.click()
+      document.documentElement.dataset.theme = 'light'
+      setTimeout(() => {
+        const row = document.querySelector('[data-pid="vanillaexpanded.vee"]')
+        row?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+        row?.scrollIntoView({ block: 'center' })
+      }, 300)
+    })()`,
+  },
 ]
 
 export async function captureScreenshots(win: BrowserWindow, dir: string) {
