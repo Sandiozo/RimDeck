@@ -59,6 +59,7 @@ Auto-sort with explanations · live problem checks · texture and research analy
 - **Problem checks** — missing dependencies, broken load-order rules, incompatibilities, duplicates, outdated mods with updated replacements.
 - **Texture conflicts** — see which mod's texture wins, compare side by side, with a slider or as a pixel diff (DDS too), and pick single textures.
 - **Research tree and items** — every mod's research on one zoomable tree, and items that exist more than once.
+- **Continue** — one click starts RimWorld straight into your latest save.
 - **Mod settings** — its own page in the sidebar: edit any mod's settings without starting the game, including ones still at their defaults.
 - **Game log** — groups errors and names the mods most likely responsible.
 - **Workshop** — download mods and whole collections through SteamCMD (optional Steam login), with update checks.
