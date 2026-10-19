@@ -29,12 +29,15 @@ import type {
 interface Bridge {
   invoke(method: string, ...args: unknown[]): Promise<any>
   on(cb: (e: AppEvent) => void): () => void
+  platform: string
 }
 
 const rd: Bridge | undefined = (window as any).rd
 const BRIDGE = 'http://127.0.0.1:5199'
 
 export const isElectron = !!rd
+export const platform = rd?.platform ?? (/Mac/.test(navigator.platform) ? 'darwin' : /Linux/.test(navigator.platform) ? 'linux' : 'win32')
+export const isMac = platform === 'darwin'
 
 async function invoke(method: string, ...args: unknown[]): Promise<any> {
   if (rd) return rd.invoke(method, ...args)

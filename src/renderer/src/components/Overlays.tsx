@@ -33,6 +33,7 @@ import { useStore, type View } from '../store'
 import { switchProfile } from './ProfileSwitcher'
 import { api } from '../api'
 import { ModIcon } from './ui'
+import { kb } from '../lib'
 
 export function SortPreview() {
   const s = useStore()
@@ -83,7 +84,7 @@ export function SortPreview() {
         </div>
         <div className="modal-foot">
           <span className="grow dim" style={{ alignSelf: 'center', fontSize: 12 }}>
-            You can undo with Ctrl Z
+            You can undo with {kb('Ctrl Z')}
           </span>
           <button className="btn" onClick={() => s.closeSort()}>
             Cancel
@@ -115,13 +116,13 @@ export function Palette() {
 
   const go = (v: View) => () => s.setView(v)
   const commands: Cmd[] = [
-    { id: 'sort', label: 'Auto-sort load order', hint: 'Ctrl Shift S', icon: <ArrowDownUp size={15} />, run: () => s.previewSort(), group: 'Commands' },
-    { id: 'save', label: 'Save to ModsConfig.xml', hint: 'Ctrl S', icon: <Save size={15} />, run: () => s.save(), group: 'Commands' },
+    { id: 'sort', label: 'Auto-sort load order', hint: kb('Ctrl Shift S'), icon: <ArrowDownUp size={15} />, run: () => s.previewSort(), group: 'Commands' },
+    { id: 'save', label: 'Save to ModsConfig.xml', hint: kb('Ctrl S'), icon: <Save size={15} />, run: () => s.save(), group: 'Commands' },
     { id: 'play', label: 'Launch RimWorld', hint: 'F5', icon: <Play size={15} />, run: () => s.launch(), group: 'Commands' },
     { id: 'continue', label: 'Continue latest save', icon: <StepForward size={15} />, run: () => s.continueGame(), group: 'Commands' },
     { id: 'fix', label: 'Fix all fixable problems', icon: <WandSparkles size={15} />, run: () => s.fixAll(), group: 'Commands' },
-    { id: 'undo', label: 'Undo', hint: 'Ctrl Z', icon: <Undo2 size={15} />, run: () => s.undo(), group: 'Commands' },
-    { id: 'redo', label: 'Redo', hint: 'Ctrl Y', icon: <Redo2 size={15} />, run: () => s.redo(), group: 'Commands' },
+    { id: 'undo', label: 'Undo', hint: kb('Ctrl Z'), icon: <Undo2 size={15} />, run: () => s.undo(), group: 'Commands' },
+    { id: 'redo', label: 'Redo', hint: kb('Ctrl Y'), icon: <Redo2 size={15} />, run: () => s.redo(), group: 'Commands' },
     { id: 'revert', label: 'Revert unsaved changes', icon: <RotateCcw size={15} />, run: () => s.revert(), group: 'Commands' },
     { id: 'rescan', label: 'Rescan mod folders', icon: <RefreshCw size={15} />, run: () => s.reload(), group: 'Commands' },
     { id: 'bisect', label: 'Find a broken mod (binary search)', icon: <Bug size={15} />, run: () => s.startBisect(), group: 'Commands' },

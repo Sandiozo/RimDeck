@@ -2,6 +2,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import type { Replacement, RuleMap, RulesBundle } from '../../shared/types.ts'
+import { rimsortDir } from './rimsort.ts'
 
 const COMMUNITY_URL = 'https://raw.githubusercontent.com/RimSort/Community-Rules-Database/main/communityRules.json'
 const REPLACEMENTS_URL = 'https://raw.githubusercontent.com/emipa606/UseThisInstead/main/replacements.json.gz'
@@ -61,7 +62,7 @@ async function getFile(url: string, file: string, force: boolean, fallback?: str
 
 export async function loadRules(dbDir: string, force = false): Promise<RulesBundle> {
   await mkdir(dbDir, { recursive: true })
-  const rimsort = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'RimSort') : ''
+  const rimsort = rimsortDir()
   const [cr, rp] = await Promise.all([
     getFile(COMMUNITY_URL, join(dbDir, 'communityRules.json'), force, rimsort && join(rimsort, 'communityRules.json')),
     getFile(REPLACEMENTS_URL, join(dbDir, 'replacements.json.gz'), force, rimsort && join(rimsort, 'dbs', 'UseThisInstead', 'replacements.json.gz')),

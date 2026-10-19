@@ -208,6 +208,10 @@ a:hover {
 .titlebar.browser {
   padding-right: 14px;
 }
+/* macOS draws its window buttons at the top left instead. */
+:root[data-platform='darwin'] .titlebar:not(.browser) {
+  padding: 0 14px 0 86px;
+}
 .titlebar button,
 .titlebar input,
 .titlebar .no-drag {

@@ -38,7 +38,7 @@ import { effectiveDirs, OFFICIAL_ORDER } from '../shared/graph.ts'
 import { readAssembly, type AssemblyInfo } from './core/harmony.ts'
 import { findPlayerLog, parsePlayerLog, type Attribution } from './core/logs.ts'
 import { listBackups, readModListFile, readModsConfig, serializeModsConfig, writeModsConfig } from './core/modsconfig.ts'
-import { defaultConfigDir, detectPaths, majorOf, readGameVersion, validatePaths } from './core/paths.ts'
+import { defaultConfigDir, detectPaths, gameRoot, majorOf, readGameVersion, validatePaths } from './core/paths.ts'
 import { importFromRimSort } from './core/rimsort.ts'
 import { loadRules } from './core/rulesdb.ts'
 import { backupNewestSave, listSaves, readSaveMeta } from './core/saves.ts'
@@ -181,6 +181,8 @@ export class Service {
   }
 
   async addInstall(opts: { name: string; gameDir: string; dataFolder?: string }): Promise<InstallSummary[]> {
+    // On macOS the RimWorld folder holds RimWorldMac.app, which has Data and Mods inside.
+    opts = { ...opts, gameDir: await gameRoot(opts.gameDir) }
     try {
       await stat(join(opts.gameDir, 'Data', 'Core'))
     } catch {
@@ -377,6 +379,7 @@ export class Service {
   }
 
   async setSettings(patch: Partial<Settings>): Promise<AppState> {
+    if (patch.paths?.gameDir) patch = { ...patch, paths: { ...patch.paths, gameDir: await gameRoot(patch.paths.gameDir) } }
     const pathsChanged = patch.paths && JSON.stringify(patch.paths) !== JSON.stringify(this.settings.paths)
     this.settings = { ...this.settings, ...patch, paths: { ...this.settings.paths, ...patch.paths } }
     this.syncCurrentInstall()
@@ -666,7 +669,7 @@ export class Service {
     const out: AssemblySettings = { mods: [], schemas: {} }
     // 1.7 keeps the game code next to the executable; Unity versions keep it under *_Data/Managed.
     const g = this.settings.paths.gameDir
-    const game = ['', 'RimWorldWin64_Data/Managed', 'RimWorldLinux_Data/Managed', 'RimWorldMac.app/Contents/Resources/Data/Managed'].map((d) => join(g, d, 'Assembly-CSharp.dll'))
+    const game = ['', 'RimWorldWin64_Data/Managed', 'RimWorldLinux_Data/Managed', 'Contents/Resources/Data/Managed'].map((d) => join(g, d, 'Assembly-CSharp.dll'))
     const resolveEnum = (name: string) => {
       for (const f of [...m.assemblies, ...game]) {
         const r = enumMembersIn(f, name)
@@ -818,8 +821,16 @@ export class Service {
 
   // The executable's name differs between game versions and platforms.
   async gameExe(): Promise<string | null> {
-    const names = process.platform === 'win32' ? ['RimWorldWin64.exe', 'RimWorld.exe', 'RimWorldWin.exe'] : ['RimWorldLinux', 'RimWorld']
-    for (const n of names) if (await exists(join(this.settings.paths.gameDir, n))) return join(this.settings.paths.gameDir, n)
+    const dir = this.settings.paths.gameDir
+    if (process.platform === 'darwin') {
+      // The game folder is the app bundle; its executable is the one file in Contents/MacOS.
+      const macos = join(dir, 'Contents', 'MacOS')
+      const files = await readdir(macos).catch(() => [] as string[])
+      const exe = files.find((f) => /rimworld/i.test(f)) ?? files[0]
+      return exe ? join(macos, exe) : null
+    }
+    const names = process.platform === 'win32' ? ['RimWorldWin64.exe', 'RimWorld.exe', 'RimWorldWin.exe'] : ['RimWorldLinux', 'RimWorld', 'RimWorld.x86_64']
+    for (const n of names) if (await exists(join(dir, n))) return join(dir, n)
     return null
   }
 

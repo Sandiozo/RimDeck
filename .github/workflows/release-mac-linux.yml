@@ -1,0 +1,68 @@
+# Builds the macOS and Linux packages for each published release and attaches them to it.
+# The Windows installer is built and published locally with `npm run release`; publishing the
+# release is what starts this workflow. It can also be run by hand for an existing tag.
+name: macOS and Linux builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to (v1.2.0), or a branch to only test the build (main)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            script: dist:mac
+          - os: ubuntu-22.04
+            script: dist:linux
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run ${{ matrix.script }}
+        env:
+          # No Apple Developer certificate: the app is ad-hoc signed (see package.json).
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Kept for a week either way, so a test run (started by hand with a branch name) can be tried out.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rimdeck-${{ runner.os }}
+          path: |
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+          retention-days: 7
+
+      - name: Attach to the release
+        if: startsWith(env.TAG, 'v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(release/*.dmg release/*.zip release/*.AppImage release/*.deb release/*.blockmap release/latest-*.yml)
+          ls -la "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --clobber

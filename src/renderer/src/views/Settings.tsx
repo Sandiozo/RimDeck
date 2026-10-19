@@ -279,6 +279,7 @@ function AboutPanel() {
     : state.phase === 'checking' ? 'Checking…'
     : state.phase === 'downloading' ? `Downloading ${state.version ?? 'update'}… ${state.percent ?? 0}%`
     : state.phase === 'ready' ? `Version ${state.version} has been downloaded and will be installed on restart`
+    : state.phase === 'available' ? `Version ${state.version} is available`
     : state.phase === 'none' ? 'RimDeck is up to date'
     : state.phase === 'error' ? `Could not check: ${state.error}`
     : 'Updates are checked automatically at startup'
@@ -297,6 +298,10 @@ function AboutPanel() {
         {state?.phase === 'ready' ? (
           <button className="btn primary" onClick={() => api.updateInstall()}>
             <Download size={14} /> Restart and update
+          </button>
+        ) : state?.phase === 'available' ? (
+          <button className="btn primary" onClick={() => api.updateInstall()}>
+            <Download size={14} /> Download {state.version}
           </button>
         ) : (
           <button

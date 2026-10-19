@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "dist": "electron-vite build && electron-builder --win --x64 --publish never",
     "release": "npm run dist && node scripts/release.mjs",
-    "screenshots": "electron-vite build && node -e \"process.env.RD_SCREENSHOTS='docs/screenshots';require('child_process').spawnSync(require('electron'),['.'],{stdio:'inherit',env:process.env})\""
+    "screenshots": "electron-vite build && node -e \"process.env.RD_SCREENSHOTS='docs/screenshots';require('child_process').spawnSync(require('electron'),['.'],{stdio:'inherit',env:process.env})\"",
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never",
+    "dist:linux": "electron-vite build && electron-builder --linux --publish never"
   },
   "build": {
     "appId": "dev.rimdeck.app",
@@ -44,6 +46,52 @@
       "installerIcon": "resources/icon.ico",
       "uninstallerIcon": "resources/icon.ico",
       "installerHeaderIcon": "resources/icon.ico"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "category": "public.app-category.games",
+      "identity": "-",
+      "artifactName": "RimDeck-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "RimDeck ${version}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "category": "Game",
+      "synopsis": "Mod manager and load order sorter for RimWorld",
+      "maintainer": "Sandis <48017011+Sandiozo@users.noreply.github.com>",
+      "artifactName": "RimDeck-${version}-linux-${arch}.${ext}"
     },
     "publish": [
       {

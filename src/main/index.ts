@@ -211,7 +211,10 @@ function createWindow() {
     show: false,
     backgroundColor: '#0f1113',
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#15181b', symbolColor: '#b3ada2', height: 44 },
+    // macOS keeps its own window buttons on the left; Windows and Linux draw theirs over the title bar.
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 16, y: 15 } }
+      : { titleBarOverlay: { color: '#15181b', symbolColor: '#b3ada2', height: 44 } }),
     icon: join(here, '../../resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),

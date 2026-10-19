@@ -1,4 +1,5 @@
 import type { Issue, ModInfo, ModMeta } from '@shared/types'
+import { isMac } from './api'
 
 export interface FilterCtx {
   meta: Record<string, ModMeta>
@@ -127,6 +128,12 @@ export function worst(issues: Issue[] | undefined): Issue['severity'] | null {
 const NOISE_TERMS = new Set(['null', 'true', 'false', 'object', 'string', 'none', 'this', 'type', 'name', 'value', 'named', 'defname'])
 
 // Def names worth searching for in a log message, e.g. "No Verse.ThingDef named Foo" -> Foo.
+/** A shortcut as written for this platform: "Ctrl Shift S" becomes "⌘⇧S" on a Mac. */
+export function kb(keys: string): string {
+  if (!isMac) return keys
+  return keys.replace(/Ctrl ?/g, '⌘').replace(/Shift ?/g, '⇧').replace(/Alt ?/g, '⌥')
+}
+
 const termCache = new Map<string, string[]>()
 
 export function searchTerms(message: string): string[] {

@@ -4,7 +4,7 @@ import type { ModCategory } from '@shared/types'
 import { CATEGORY_LABEL, resolver } from '@shared/graph'
 import { categoryOf, useStore } from '../store'
 import { api, imgUrl, workshopUrl } from '../api'
-import { richText, TAG_COLORS, timeAgo } from '../lib'
+import { kb, richText, TAG_COLORS, timeAgo } from '../lib'
 import { clickable, ModIcon, SeverityIcon } from './ui'
 import { removeLabel, removeMods, steamUrl } from '../removeMods'
 import { ModSettingsSection, openSettings, settingsFor, useSettingsFiles } from './SettingsEditor'
@@ -97,10 +97,10 @@ export function Details() {
           <div className="d-section">
             <h4>Shortcuts</h4>
             <div className="kv">
-              <span>Ctrl K</span><span>Search mods and commands</span>
-              <span>Ctrl S</span><span>Save load order</span>
-              <span>Ctrl Shift S</span><span>Auto-sort</span>
-              <span>Ctrl Z / Y</span><span>Undo / redo</span>
+              <span>{kb('Ctrl K')}</span><span>Search mods and commands</span>
+              <span>{kb('Ctrl S')}</span><span>Save load order</span>
+              <span>{kb('Ctrl Shift S')}</span><span>Auto-sort</span>
+              <span>{kb('Ctrl Z / Y')}</span><span>Undo / redo</span>
               <span>Enter</span><span>Activate / deactivate selected</span>
               <span>Alt ↑ ↓</span><span>Move selected mods</span>
               <span>Double-click</span><span>Toggle a mod</span>

@@ -15,7 +15,6 @@ const INSTALLER = IS_WIN
 const BATCH = 20 // items per SteamCMD session
 const MAX_ATTEMPTS = 3 // SteamCMD resumes timed-out downloads on the next run
 
-
 // Just enough of the zip format for Valve's installer (stored or deflated entries, no zip64).
 function unzip(buf: Buffer): { name: string; data: Buffer }[] {
   let eocd = buf.length - 22

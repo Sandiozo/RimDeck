@@ -530,7 +530,8 @@ export interface DefData {
 }
 
 export interface UpdateState {
-  phase: 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'error'
+  /** 'available': a newer version exists but has to be downloaded by hand (macOS, unsigned). */
+  phase: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
   current: string
   version?: string
   percent?: number

@@ -1,4 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { LogEntry, LogReport } from '../../shared/types.ts'
 import { defaultConfigDir } from './paths.ts'
@@ -8,7 +9,10 @@ export async function findPlayerLog(configDir: string): Promise<string | null> {
   let best: { p: string; t: number } | null = null
   // A custom -savedatafolder doesn't move Unity's log, so the default location is checked too.
   const fallback = join(dirname(defaultConfigDir()), 'Logs', 'Player.log')
-  for (const p of [join(base, 'Player.log'), join(base, 'Logs', 'Player.log'), fallback]) {
+  const mac = join(homedir(), 'Library', 'Logs', 'Ludeon Studios', 'RimWorld by Ludeon Studios', 'Player.log')
+  const candidates = [join(base, 'Player.log'), join(base, 'Logs', 'Player.log'), fallback]
+  if (process.platform === 'darwin') candidates.push(mac)
+  for (const p of candidates) {
     try {
       const t = (await stat(p)).mtimeMs
       if (!best || t > best.t) best = { p, t }

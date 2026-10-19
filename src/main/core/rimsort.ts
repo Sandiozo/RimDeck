@@ -3,8 +3,11 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ModMeta, RuleMap } from '../../shared/types.ts'
 
+/** RimSort's data folder (its settings, rules and databases) on this platform. */
 export function rimsortDir() {
-  return process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'RimSort') : join(homedir(), '.local', 'share', 'RimSort')
+  if (process.platform === 'win32' && process.env.LOCALAPPDATA) return join(process.env.LOCALAPPDATA, 'RimSort')
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'RimSort')
+  return join(homedir(), '.local', 'share', 'RimSort')
 }
 
 async function json(file: string): Promise<any> {

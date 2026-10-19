@@ -30,7 +30,7 @@ import iconLarge from './assets/icon-128.png'
 import type { UpdateState } from '@shared/types'
 import { isElectron, onEvent, api } from './api'
 import { useTheme } from './theme'
-import { timeAgo } from './lib'
+import { kb, timeAgo } from './lib'
 import { clickable } from './components/ui'
 import { ModList } from './components/ModList'
 import { Details } from './components/Details'
@@ -163,21 +163,21 @@ export function App() {
           RimDeck {appVersion && <small>v{appVersion}</small>}
         </div>
         <ProfileSwitcher />
-        <button className="btn ghost icon" title="Undo (Ctrl Z)" disabled={!s.past.length} onClick={s.undo}>
+        <button className="btn ghost icon" title={`Undo (${kb('Ctrl Z')})`} disabled={!s.past.length} onClick={s.undo}>
           <Undo2 size={15} />
         </button>
-        <button className="btn ghost icon" title="Redo (Ctrl Y)" disabled={!s.future.length} onClick={s.redo}>
+        <button className="btn ghost icon" title={`Redo (${kb('Ctrl Y')})`} disabled={!s.future.length} onClick={s.redo}>
           <Redo2 size={15} />
         </button>
         <div className="searchbox no-drag" {...clickable(() => s.setPalette(true))}>
           <Search size={14} />
           <span className="grow">Search mods and commands</span>
-          <span className="kbd">Ctrl K</span>
+          <span className="kbd">{kb('Ctrl K')}</span>
         </div>
-        <button className="btn" title="Auto-sort (Ctrl Shift S)" onClick={s.previewSort}>
+        <button className="btn" title={`Auto-sort (${kb('Ctrl Shift S')})`} onClick={s.previewSort}>
           <ArrowDownUp size={14} /> Sort
         </button>
-        <button className={'btn' + (dirty ? ' primary' : '')} title="Save to ModsConfig.xml (Ctrl S)" onClick={s.save} disabled={!dirty}>
+        <button className={'btn' + (dirty ? ' primary' : '')} title={`Save to ModsConfig.xml (${kb('Ctrl S')})`} onClick={s.save} disabled={!dirty}>
           <Save size={14} /> Save{dirty && <span className="pip" />}
         </button>
         <ContinueButton />
@@ -210,6 +210,18 @@ export function App() {
             <span className="grow">{app.pathProblems[0]} Set your folders in Settings.</span>
             <button className="btn sm" onClick={() => s.setView('settings')}>
               Open settings
+            </button>
+          </div>
+        )}
+        {update?.phase === 'available' && !updateDismissed && (
+          <div className="banner accent">
+            <Download size={15} color="var(--accent-text)" />
+            <span className="grow">RimDeck {update.version} is available.</span>
+            <button className="btn sm primary" onClick={() => api.updateInstall()}>
+              Download
+            </button>
+            <button className="btn sm ghost icon" title="Close" aria-label="Close" onClick={() => setUpdateDismissed(true)}>
+              <X size={13} />
             </button>
           </div>
         )}
