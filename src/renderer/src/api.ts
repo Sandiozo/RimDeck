@@ -24,13 +24,11 @@ import type {
   UpdateReport,
   UserData,
   WorkshopCollection,
-  WorkshopDetails,
 } from '@shared/types'
 
 interface Bridge {
   invoke(method: string, ...args: unknown[]): Promise<any>
   on(cb: (e: AppEvent) => void): () => void
-  platform: string
 }
 
 const rd: Bridge | undefined = (window as any).rd
@@ -60,13 +58,11 @@ export const api = {
   importRimSort: (): Promise<{ found: boolean; rules: number; ignored: number; meta: number }> => invoke('importRimSort'),
   listSaves: (): Promise<SaveSummary[]> => invoke('listSaves'),
   listBackups: (): Promise<{ file: string; mtime: number; count: number }[]> => invoke('listBackups'),
-  restoreBackup: (file: string): Promise<ModsConfig | null> => invoke('restoreBackup', file),
   analyze: (pids: string[]): Promise<ModAssemblyReport[]> => invoke('analyze', pids),
   readLog: (): Promise<LogReport | null> => invoke('readLog'),
   launch: (): Promise<{ ok: boolean; message: string }> => invoke('launch'),
   readListFile: (file: string): Promise<string[]> => invoke('readListFile', file),
   writeListFile: (file: string, ids: string[]): Promise<void> => invoke('writeListFile', file, ids),
-  lookupWorkshop: (ids: string[]): Promise<WorkshopDetails[]> => invoke('lookupWorkshop', ids),
   workshopCollection: (id: string): Promise<WorkshopCollection> => invoke('workshopCollection', id),
   getDownloads: (): Promise<DownloadsState> => invoke('getDownloads'),
   queueDownloads: (ids: string[]): Promise<DownloadsState> => invoke('queueDownloads', ids),
@@ -98,7 +94,6 @@ export const api = {
   listInstalls: (): Promise<InstallSummary[]> => invoke('listInstalls'),
   trashMods: (pids: string[]): Promise<{ trashed: string[]; skipped: string[] }> => invoke('trashMods', pids),
   unsubscribeMods: (pids: string[]): Promise<{ ok: boolean; done: string[]; failed: { id: string; error: string }[]; error?: string; packageIds: string[] }> => invoke('unsubscribeMods', pids),
-  switchInstall: (id: string): Promise<AppState> => invoke('switchInstall', id),
   addInstall: (o: { name: string; gameDir: string; dataFolder?: string }): Promise<InstallSummary[]> => invoke('addInstall', o),
   renameInstall: (id: string, name: string): Promise<InstallSummary[]> => invoke('renameInstall', id, name),
   removeInstall: (id: string): Promise<InstallSummary[]> => invoke('removeInstall', id),

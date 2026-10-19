@@ -13,6 +13,8 @@ async function measure(active: string[]) {
   usePerf.setState({ busy: true })
   try {
     usePerf.setState({ report: await api.loadReport(active) })
+  } catch (e: any) {
+    useStore.getState().toast('error', `Could not measure load times: ${e.message}`)
   } finally {
     usePerf.setState({ busy: false })
   }
@@ -40,7 +42,7 @@ export function PerformanceView() {
   const name = (pid: string) => s.installed.get(pid)?.[0]?.name ?? pid
   const max = report?.startup ? Math.max(...report.startup.phases.map((p) => p.ms)) : 1
 
-  const Th = ({ k, children }: { k: SortKey; children: React.ReactNode }) => (
+  const th = (k: SortKey, children: React.ReactNode) => (
     <th style={{ cursor: 'pointer', color: sortKey === k ? 'var(--text)' : undefined }} onClick={() => setSortKey(k)}>
       {children}
     </th>
@@ -64,7 +66,7 @@ export function PerformanceView() {
         <>
           <div className="panel" style={{ marginBottom: 12 }}>
             <div className="panel-head">
-              <Gauge size={16} color="var(--accent)" />
+              <Gauge size={16} color="var(--accent-text)" />
               <h3 className="grow">
                 {report.startup ? `Last startup: ${secs(report.startup.toMenu)} to the main menu` : 'No startup timing found in the game log'}
               </h3>
@@ -115,18 +117,18 @@ export function PerformanceView() {
               <thead>
                 <tr>
                   <th>Mod</th>
-                  <Th k="score">Est. share</Th>
-                  <Th k="textureBytes">Textures</Th>
-                  <Th k="defs">Defs</Th>
-                  <Th k="patches">Patches</Th>
-                  <Th k="dllBytes">Code</Th>
+                  {th('score', 'Est. share')}
+                  {th('textureBytes', 'Textures')}
+                  {th('defs', 'Defs')}
+                  {th('patches', 'Patches')}
+                  {th('dllBytes', 'Code')}
                 </tr>
               </thead>
               <tbody>
                 {rows.slice(0, limit).map((m: ModCost) => {
                   const share = m.score / total
                   return (
-                    <tr key={m.packageId} className="click" onClick={() => { s.select(m.packageId); s.setView('mods') }}>
+                    <tr key={m.packageId} className="click" onClick={() => { s.showMod(m.packageId) }}>
                       <td style={{ maxWidth: 300 }}>
                         <div className="row">
                           <ModIcon mod={s.installed.get(m.packageId)?.[0]} size={18} />

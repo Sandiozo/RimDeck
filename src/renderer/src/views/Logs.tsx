@@ -19,6 +19,8 @@ export function LogsView() {
     setBusy(true)
     try {
       setReport(await api.readLog())
+    } catch (e: any) {
+      useStore.getState().toast('error', `Could not read the game log: ${e.message}`)
     } finally {
       setBusy(false)
     }
@@ -75,7 +77,7 @@ export function LogsView() {
               <div className="l">Exceptions</div>
             </div>
             <div className="stat" style={{ cursor: 'default' }}>
-              <div className="n" style={{ color: counts.error ? '#ff8a5c' : undefined }}>{counts.error}</div>
+              <div className="n" style={{ color: counts.error ? 'var(--err)' : undefined }}>{counts.error}</div>
               <div className="l">Errors</div>
             </div>
             <div className="stat" style={{ cursor: 'default' }}>
@@ -159,8 +161,7 @@ export function LogsView() {
                               className="chip click accent"
                               onClick={(ev) => {
                                 ev.stopPropagation()
-                                s.select(pid)
-                                s.setView('mods')
+                                s.showMod(pid)
                               }}
                             >
                               {name(pid)}

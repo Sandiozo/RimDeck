@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Gamepad2, Trash, SlidersHorizontal, Copy, Cpu, Download, ExternalLink, FolderOpen, Link2, Minus, Plus, Tags, StickyNote, Paintbrush, ArrowRight, Check } from 'lucide-react'
 import type { ModCategory } from '@shared/types'
 import { CATEGORY_LABEL, resolver } from '@shared/graph'
 import { categoryOf, useStore } from '../store'
 import { api, imgUrl, workshopUrl } from '../api'
 import { richText, TAG_COLORS, timeAgo } from '../lib'
-import { ModIcon, SeverityIcon } from './ui'
+import { clickable, ModIcon, SeverityIcon } from './ui'
 import { removeLabel, removeMods, steamUrl } from '../removeMods'
 import { ModSettingsSection, openSettings, settingsFor, useSettingsFiles } from './SettingsEditor'
 
@@ -40,8 +40,24 @@ export function Details() {
   const [tagDraft, setTagDraft] = useState('')
   const [notes, setNotes] = useState(meta?.notes ?? '')
   const [showAll, setShowAll] = useState(false)
+  // Clicking another mod changes the selection before the text box loses focus, so unsaved
+  // notes and tags remember which mod they were typed for.
+  const draft = useRef<{ pid: string; notes?: string; tag?: string }>({ pid: pid ?? '' })
+  const flushDraft = () => {
+    const d = draft.current
+    draft.current = { pid: pid ?? '' }
+    const st = useStore.getState()
+    const cur = st.app?.user.meta[d.pid]
+    const tag = d.tag?.trim()
+    const patch: { notes?: string; tags?: string[] } = {}
+    if (d.notes !== undefined && d.notes !== (cur?.notes ?? '')) patch.notes = d.notes || undefined
+    if (tag && !cur?.tags?.includes(tag)) patch.tags = [...(cur?.tags ?? []), tag]
+    if (d.pid && Object.keys(patch).length) void st.setMeta(d.pid, { ...cur, ...patch })
+  }
   useEffect(() => {
+    flushDraft()
     setNotes(meta?.notes ?? '')
+    setTagDraft('')
     setShowAll(false)
   }, [pid])
 
@@ -96,8 +112,7 @@ export function Details() {
 
   const setMeta = (patch: Partial<NonNullable<typeof meta>>) => s.setMeta(pid, { ...meta, ...patch })
   const addTag = () => {
-    const t = tagDraft.trim()
-    if (t && !meta?.tags?.includes(t)) setMeta({ tags: [...(meta?.tags ?? []), t] })
+    flushDraft()
     setTagDraft('')
   }
   const dependents = s.dependents.get(pid) ?? []
@@ -119,7 +134,7 @@ export function Details() {
         </div>
 
         <div className="chips">
-          <span className="chip click mono" title="Copy packageId" onClick={() => navigator.clipboard.writeText(mod?.packageIdRaw ?? pid)}>
+          <span className="chip click mono" title="Copy packageId" {...clickable(() => void navigator.clipboard.writeText(mod?.packageIdRaw ?? pid))}>
             <Copy size={10} /> {mod?.packageIdRaw ?? pid}
           </span>
           {mod && <span className="chip">{mod.source === 'workshop' ? 'Workshop' : mod.source === 'local' ? 'Local' : mod.source === 'core' ? 'Core' : 'DLC'}</span>}
@@ -263,11 +278,11 @@ export function Details() {
             <Paintbrush size={11} /> Color and tags
           </h4>
           <div className="swatches" style={{ marginBottom: 8 }}>
-            <span className={'swatch none' + (!meta?.color ? ' on' : '')} onClick={() => setMeta({ color: undefined })}>
+            <button type="button" className={'swatch none' + (!meta?.color ? ' on' : '')} title="No color" aria-label="No color" onClick={() => setMeta({ color: undefined })}>
               ×
-            </span>
+            </button>
             {TAG_COLORS.map((c) => (
-              <span key={c} className={'swatch' + (meta?.color === c ? ' on' : '')} style={{ background: c }} onClick={() => setMeta({ color: c })} />
+              <button type="button" key={c} className={'swatch' + (meta?.color === c ? ' on' : '')} style={{ background: c }} title="Color" aria-label={`Color ${c}`} onClick={() => setMeta({ color: c })} />
             ))}
           </div>
           <div className="tag-input">
@@ -280,7 +295,10 @@ export function Details() {
             <input
               value={tagDraft}
               placeholder="Add tag…"
-              onChange={(e) => setTagDraft(e.target.value)}
+              onChange={(e) => {
+                setTagDraft(e.target.value)
+                draft.current = { ...draft.current, pid, tag: e.target.value }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ',') {
                   e.preventDefault()
@@ -318,8 +336,11 @@ export function Details() {
             style={{ width: '100%' }}
             value={notes}
             placeholder="Private notes about this mod…"
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={() => notes !== (meta?.notes ?? '') && setMeta({ notes: notes || undefined })}
+            onChange={(e) => {
+              setNotes(e.target.value)
+              draft.current = { ...draft.current, pid, notes: e.target.value }
+            }}
+            onBlur={flushDraft}
           />
         </div>
 

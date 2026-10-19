@@ -44,7 +44,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
   useEffect(() => {
     if (!files) void load()
   }, [])
-  const mine = (files ?? []).filter((f) => f.folder?.toLowerCase() === folder.toLowerCase())
+  const mine = settingsFor(files, folder)
   return (
     <div className="d-section">
       <h4>
@@ -59,7 +59,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
             <span className="dim" style={{ fontSize: 11 }}>
               {f.exists === false ? 'All defaults' : `${bytes(f.size)} · ${timeAgo(f.mtime)}`}
             </span>
-            <button className="btn sm" onClick={() => useStore.setState({ settingsEditor: f.path })}>
+            <button className="btn sm" onClick={() => openSettings(f.path)}>
               Edit
             </button>
             <button
@@ -363,12 +363,20 @@ export function SettingsEditor() {
     setQ('')
     setError('')
     setSchema(null)
-    Promise.all([api.readModSettings(path), api.modSettingsSchema(path).catch(() => null)]).then(([r, sc]) => {
-      setSchema(sc)
-      setDoc(r)
-      setCollapsed(initialCollapsed(flatten(r, sc)))
-    }, (e) => setError(e.message))
-    api.gameRunning().then(setRunning)
+    let stale = false
+    Promise.all([api.readModSettings(path), api.modSettingsSchema(path).catch(() => null)]).then(
+      ([r, sc]) => {
+        if (stale) return
+        setSchema(sc)
+        setDoc(r)
+        setCollapsed(initialCollapsed(flatten(r, sc)))
+      },
+      (e) => !stale && setError(e.message),
+    )
+    api.gameRunning().then((r) => !stale && setRunning(r))
+    return () => {
+      stale = true
+    }
   }, [path])
 
   const rows = useMemo(() => (doc ? flatten(doc, schema) : []), [doc, schema])
@@ -648,7 +656,7 @@ export function SettingsEditor() {
     <div className="overlay" onMouseDown={close}>
       <div className="modal" style={{ width: 'min(920px, 94vw)', maxHeight: '86vh' }} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <SlidersHorizontal size={20} color="var(--accent)" style={{ marginTop: 2 }} />
+          <SlidersHorizontal size={20} color="var(--accent-text)" style={{ marginTop: 2 }} />
           <div className="grow" style={{ minWidth: 0 }}>
             <h2 className="ellipsis">{mod?.name ?? 'Mod settings'}</h2>
             <p className="mono ellipsis">{file}</p>

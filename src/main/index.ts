@@ -22,15 +22,12 @@ const API = [
   'setUser',
   'importRimSort',
   'listSaves',
-  'readSave',
   'listBackups',
   'analyze',
   'readLog',
   'launch',
-  'restoreBackup',
   'readListFile',
   'writeListFile',
-  'lookupWorkshop',
   'workshopCollection',
   'getDownloads',
   'queueDownloads',
@@ -61,7 +58,6 @@ const API = [
   'switchProfile',
   'trashMods',
   'unsubscribeMods',
-  'switchInstall',
   'addInstall',
   'renameInstall',
   'removeInstall',
@@ -73,7 +69,12 @@ const here = dirname(fileURLToPath(import.meta.url))
 let win: BrowserWindow | null = null
 let service: Service
 let initPromise: Promise<void> | null = null
-const ready = () => (initPromise ??= service.init())
+// A failed start is retried on the next call instead of failing every call until restart.
+const ready = () =>
+  (initPromise ??= service.init().catch((e) => {
+    initPromise = null
+    throw e
+  }))
 const sseClients = new Set<import('node:http').ServerResponse>()
 
 function emit(e: AppEvent) {
@@ -165,6 +166,8 @@ function startBridge() {
   createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173')
     res.setHeader('Access-Control-Allow-Headers', 'content-type')
+    // Browsers send an Origin with cross-site requests; only the dev renderer may call in.
+    if (req.headers.origin && req.headers.origin !== 'http://localhost:5173') return res.writeHead(403).end()
     if (req.method === 'OPTIONS') return res.end()
     const url = new URL(req.url ?? '/', 'http://x')
     try {
@@ -204,9 +207,9 @@ function createWindow() {
     minWidth: 1040,
     minHeight: 640,
     show: false,
-    backgroundColor: '#0a0b0e',
+    backgroundColor: '#0f1113',
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0a0b0e', symbolColor: '#9aa3b2', height: 44 },
+    titleBarOverlay: { color: '#15181b', symbolColor: '#b3ada2', height: 44 },
     icon: join(here, '../../resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),

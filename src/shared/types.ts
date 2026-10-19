@@ -94,6 +94,8 @@ export interface Paths {
 
 export type SortMode = 'grouped' | 'minimal' | 'alphabetical'
 
+export type ThemeMode = 'dark' | 'light' | 'system'
+
 export interface Settings {
   paths: Paths
   sortMode: SortMode
@@ -103,6 +105,7 @@ export interface Settings {
   depsAsLoadAfter: boolean
   useCommunityRules: boolean
   accent: string
+  theme: ThemeMode
   firstRunDone: boolean
   targetVersion: string // '' = the installed game's version; otherwise check mods against this one
   installs: GameInstall[]

@@ -1,5 +1,6 @@
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { exists } from './store.ts'
 
 // A tiny local mod that loads last; copying a texture into it makes that version win, one texture at a time.
 export const PICKS_ID = 'rimdeck.texturepicks'
@@ -36,12 +37,6 @@ async function readPicks(dir: string): Promise<Record<string, TexturePick>> {
   }
 }
 
-async function exists(p: string) {
-  return stat(p).then(
-    () => true,
-    () => false,
-  )
-}
 
 export async function listPicks(localModsDir: string) {
   return readPicks(picksDir(localModsDir))

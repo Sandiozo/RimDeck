@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen, RefreshCw, Download, WandSparkles } from 'lucide-react'
-import type { Paths, SortMode, UpdateState } from '@shared/types'
+import type { Paths, SortMode, ThemeMode, UpdateState } from '@shared/types'
 import { useStore } from '../store'
 import { api, onEvent } from '../api'
 import { Seg, Toggle } from '../components/ui'
 import { timeAgo } from '../lib'
 import { InstallsPanel } from '../components/Installs'
 
-const ACCENTS = ['#7c8cff', '#b58cff', '#4fd1c5', '#3ecf8e', '#f5b544', '#ff7a90', '#5aa9ff']
+// Rust, amber, moss, steel, verdigris, brick and bone.
+const ACCENTS: [string, string][] = [
+  ['#d9792b', 'Rust'],
+  ['#e2a83e', 'Amber'],
+  ['#8fb854', 'Moss'],
+  ['#6f9fc4', 'Steel'],
+  ['#4fb3a6', 'Verdigris'],
+  ['#d9614c', 'Brick'],
+  ['#d8cdb5', 'Bone'],
+]
 
 const PATH_FIELDS: [keyof Paths, string, string][] = [
   ['gameDir', 'Game folder', 'Contains Data/Core and the game executable'],
@@ -120,7 +129,7 @@ export function SettingsView() {
               try {
                 const rules = await api.getRules(true)
                 useStore.setState({ rules })
-                s.setActive(s.active, false)
+                s.rederive()
                 s.toast('ok', 'Rule databases updated')
               } catch {
                 s.toast('error', 'Update failed')
@@ -192,11 +201,33 @@ export function SettingsView() {
         </div>
         <div className="setting">
           <div className="label">
+            <b>Theme</b>
+            <span>System follows the Windows light or dark setting</span>
+          </div>
+          <Seg<ThemeMode>
+            value={st.theme ?? 'dark'}
+            onChange={(theme) => s.updateSettings({ theme })}
+            options={[
+              ['dark', 'Dark'],
+              ['light', 'Light'],
+              ['system', 'System'],
+            ]}
+          />
+        </div>
+        <div className="setting">
+          <div className="label">
             <b>Accent color</b>
           </div>
           <div className="swatches">
-            {ACCENTS.map((c) => (
-              <span key={c} className={'swatch' + (st.accent === c ? ' on' : '')} style={{ background: c }} onClick={() => s.updateSettings({ accent: c })} />
+            {ACCENTS.map(([c, name]) => (
+              <button
+                key={c}
+                className={'swatch' + (st.accent === c ? ' on' : '')}
+                style={{ background: c }}
+                title={name}
+                aria-label={name}
+                onClick={() => s.updateSettings({ accent: c })}
+              />
             ))}
           </div>
         </div>
@@ -213,7 +244,7 @@ export function SettingsView() {
               await s.reload()
               const app = await api.getState()
               useStore.setState({ app })
-              s.setActive(s.active, false)
+              s.rederive()
               s.toast('ok', `Imported ${r.rules} rules, ${r.ignored} ignored mods, ${r.meta} notes/colors`)
             }}
           >

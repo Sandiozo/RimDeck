@@ -31,7 +31,7 @@ function StatusIcon({ job }: { job: DownloadJob }) {
   if (job.status === 'failed') return <CircleAlert size={14} color="var(--err)" />
   if (job.status === 'cancelled') return <X size={14} color="var(--text-3)" />
   if (job.status === 'queued') return <Clock size={14} color="var(--text-3)" />
-  return <LoaderCircle size={14} className="spin" color="var(--accent)" />
+  return <LoaderCircle size={14} className="spin" color="var(--accent-text)" />
 }
 
 /** Two-step button for actions that replace files. */
@@ -49,7 +49,7 @@ function ConfirmButton({ label, confirm, onConfirm, className = 'btn sm' }: { la
       <button className={className + ' primary'} onClick={() => { setArmed(false); onConfirm() }}>
         Confirm
       </button>
-      <button className="btn sm ghost icon" onClick={() => setArmed(false)}>
+      <button className="btn sm ghost icon" title="Close" aria-label="Close" onClick={() => setArmed(false)}>
         <X size={12} />
       </button>
     </span>
@@ -212,7 +212,7 @@ export function DownloadsView() {
                         </button>
                       )}
                       {mod && (
-                        <button className="btn sm" onClick={() => { s.select(mod.packageId); s.setView('mods') }}>
+                        <button className="btn sm" onClick={() => { s.showMod(mod.packageId) }}>
                           Show mod
                         </button>
                       )}
@@ -274,7 +274,7 @@ export function DownloadsView() {
                       <ModIcon mod={mod} size={20} />
                     </td>
                     <td>
-                      <b style={{ fontWeight: 580, cursor: 'pointer' }} onClick={() => { s.select(u.packageId); s.setView('mods') }}>{u.name}</b>
+                      <b style={{ fontWeight: 580, cursor: 'pointer' }} onClick={() => { s.showMod(u.packageId) }}>{u.name}</b>
                       <div className="dim" style={{ fontSize: 11.5 }}>
                         Updated {timeAgo(u.remoteTime * 1000)} · your copy is from {new Date(u.localTime * 1000).toLocaleDateString()} ({BASIS_LABEL[u.basis]})
                       </div>
@@ -307,7 +307,7 @@ export function DownloadsView() {
             <div className="dim" style={{ fontSize: 11.5, marginBottom: 6 }}>No longer available on the Workshop (removed or made private). Your installed copy still works.</div>
             <div className="chips">
               {removed.map((m) => (
-                <span key={m.uid} className="chip click" onClick={() => { s.select(m.packageId); s.setView('mods') }}>
+                <span key={m.uid} className="chip click" onClick={() => { s.showMod(m.packageId) }}>
                   {m.name}
                 </span>
               ))}

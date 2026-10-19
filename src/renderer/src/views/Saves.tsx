@@ -11,7 +11,11 @@ export function SavesView() {
   const s = useStore()
   const [saves, setSaves] = useState<SaveSummary[] | null>(null)
   const [sel, setSel] = useState<string | null>(null)
-  const load = () => api.listSaves().then(setSaves)
+  const load = () =>
+    api.listSaves().then(setSaves, (e) => {
+      setSaves([])
+      s.toast('error', `Could not read saves: ${e.message}`)
+    })
   useEffect(() => {
     load()
   }, [])
@@ -107,7 +111,7 @@ function SaveDetail({ save }: { save: SaveSummary }) {
     s.toast('info', `Load “${save.name}” from the main menu once the game has started.`)
   }
 
-  const Section = ({ title, ids, tone }: { title: string; ids: string[]; tone: string }) =>
+  const section = ({ title, ids, tone }: { title: string; ids: string[]; tone: string }) =>
     ids.length ? (
       <div className="d-section">
         <h4>
@@ -164,9 +168,9 @@ function SaveDetail({ save }: { save: SaveSummary }) {
             <Download size={14} /> Download all {missingSteam.length} missing
           </button>
         )}
-        <Section title="Not installed" ids={missing.map((m) => m.id)} tone="err" />
-        <Section title="Installed but inactive" ids={inactive} tone="warn" />
-        <Section title="Active now, not in save" ids={extra} tone="info" />
+        {section({ title: 'Not installed', ids: missing.map((m) => m.id), tone: 'err' })}
+        {section({ title: 'Installed but inactive', ids: inactive, tone: 'warn' })}
+        {section({ title: 'Active now, not in save', ids: extra, tone: 'info' })}
       </div>
     </div>
   )

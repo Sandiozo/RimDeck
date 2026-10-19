@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { Crown, FolderOpen, RefreshCw, Search, TriangleAlert, ArrowDownToLine, Check, Undo2 } from 'lucide-react'
 import type { TextureConflict, TextureReport } from '@shared/types'
-import { useStore } from '../store'
+import { isDirty, useStore } from '../store'
 import { api, imgUrl } from '../api'
 import { ModIcon, Seg } from '../components/ui'
 
-// Kept outside the view so switching tabs doesn't throw away a scan.
+// Package id of the generated mod that holds texture picks.
 const PICKS = 'rimdeck.texturepicks'
 type Picks = Record<string, { packageId: string; source: string; files: string[]; at: number }>
+// Kept outside the view so switching tabs doesn't throw away a scan.
 const useTex = create<{ report: TextureReport | null; scannedFor: string; busy: boolean; picks: Picks }>(() => ({ report: null, scannedFor: '', busy: false, picks: {} }))
 
 async function scan(active: string[]) {
@@ -16,6 +17,8 @@ async function scan(active: string[]) {
   try {
     const [report, picks] = await Promise.all([api.textures(active), api.texturePicks()])
     useTex.setState({ report, picks, scannedFor: [...active].sort().join('|') })
+  } catch (e: any) {
+    useStore.getState().toast('error', `Could not scan textures: ${e.message}`)
   } finally {
     useTex.setState({ busy: false })
   }
@@ -106,7 +109,7 @@ export function TexturesView() {
       if (!st.active.includes(PICKS)) st.activate([PICKS])
       else if (st.active[st.active.length - 1] !== PICKS) st.move([PICKS], st.active.length)
       await scan(useStore.getState().active)
-      const dirty = useStore.getState().active.join('|') !== useStore.getState().saved.join('|')
+      const dirty = isDirty(useStore.getState())
       s.toast('ok', `Using ${name(pid)}'s version of ${c.key.split('/').pop()}` + (dirty ? '. Save your load order to apply it.' : ''))
     } catch (err: any) {
       s.toast('error', err.message)
@@ -152,7 +155,7 @@ export function TexturesView() {
           <div className="n">{report ? modStats.length : '…'}</div>
           <div className="l">Mods involved</div>
         </div>
-        <div className={'stat' + (hidden.length ? '' : '')} style={{ cursor: hidden.length ? 'pointer' : 'default' }} onClick={() => hidden[0] && setModFilter(hidden[0].pid)}>
+        <div className="stat" style={{ cursor: hidden.length ? 'pointer' : 'default' }} onClick={() => hidden[0] && setModFilter(hidden[0].pid)}>
           <div className="n" style={{ color: hidden.length ? 'var(--warn)' : undefined }}>{report ? hidden.length : '…'}</div>
           <div className="l">Mostly hidden mods (80%+ overridden)</div>
         </div>
@@ -297,7 +300,7 @@ function Compare({
               const isWinner = e === winner
               return (
                 <div key={e.packageId} className={'tex-card' + (isWinner ? ' winner' : '')}>
-                  <TexImage file={e.file} className={imgClass} />
+                  <TexImage key={e.file} file={e.file} className={imgClass} />
                   <div className="tex-meta">
                     <div className="row" style={{ gap: 6 }}>
                       {isWinner && <Crown size={13} color="var(--warn)" />}
@@ -344,9 +347,9 @@ function Compare({
         {mode === 'slider' && (
           <div className="slider-wrap">
             <div className="slider-stage">
-              <TexImage file={b.file} className={imgClass} />
+              <TexImage key={b.file} file={b.file} className={imgClass} />
               <div className="slider-top" style={{ clipPath: `inset(0 0 0 ${split}%)` }}>
-                <TexImage file={winner.file} className={imgClass} />
+                <TexImage key={winner.file} file={winner.file} className={imgClass} />
               </div>
               <div className="slider-line" style={{ left: `${split}%` }} />
               <span className="slider-tag left">{name(b.packageId)}</span>

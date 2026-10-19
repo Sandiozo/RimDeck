@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { watch, type FSWatcher } from 'node:fs'
-import { copyFile, cp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative } from 'node:path'
 import type {
   Profile,
@@ -61,6 +61,8 @@ interface PlaySnapshot {
   active: string[]
 }
 
+const OLD_ACCENTS = ['#7c8cff', '#b58cff']
+
 const DEFAULT_SETTINGS: Settings = {
   paths: { gameDir: '', configDir: '', localModsDir: '', workshopDir: '' },
   sortMode: 'grouped',
@@ -69,7 +71,8 @@ const DEFAULT_SETTINGS: Settings = {
   backupSaveOnLaunch: true,
   depsAsLoadAfter: true,
   useCommunityRules: true,
-  accent: '#7c8cff',
+  accent: '#d9792b',
+  theme: 'dark',
   firstRunDone: false,
   targetVersion: '',
   installs: [],
@@ -104,7 +107,6 @@ export class Service {
   asmCache = new Map<string, { mtime: number; info: AssemblyInfo | null }>()
   watchers: FSWatcher[] = []
   rescanTimer: NodeJS.Timeout | null = null
-  gameRunning = false
   steamcmd: SteamCmd
   downloads: DownloadQueue
   downloadRecords: DownloadRecords = {}
@@ -216,6 +218,8 @@ export class Service {
   async init() {
     this.settings = await readJson(this.file('settings.json'), DEFAULT_SETTINGS)
     this.settings.paths = { ...DEFAULT_SETTINGS.paths, ...this.settings.paths }
+    // The first releases defaulted to a purple accent; move those installs to the current default.
+    if (OLD_ACCENTS.includes(this.settings.accent)) this.settings.accent = DEFAULT_SETTINGS.accent
     this.user = await readJson(this.file('user.json'), DEFAULT_USER)
     this.downloadRecords = await readJson<DownloadRecords>(this.file('downloads.json'), {})
     if (!this.settings.paths.gameDir) {
@@ -245,8 +249,9 @@ export class Service {
   // Serialized so rapid edits (e.g. coloring many mods) never interleave writes.
   saving: Promise<void> = Promise.resolve()
   saveUser() {
-    this.saving = this.saving.then(() => writeJson(this.file('user.json'), this.user)).catch(() => {})
-    return this.saving
+    const write = this.saving.then(() => writeJson(this.file('user.json'), this.user))
+    this.saving = write.catch(() => {})
+    return write
   }
 
   async rescan(emit = true) {
@@ -395,9 +400,6 @@ export class Service {
     return listSaves(this.settings.paths.configDir)
   }
 
-  async readSave(file: string) {
-    return readSaveMeta(file)
-  }
 
   async listBackups() {
     return listBackups(this.instFile('backups'))
@@ -415,8 +417,9 @@ export class Service {
   analyzeMod(m: ModInfo): ModAssemblyReport {
     const report: ModAssemblyReport = { packageId: m.packageId, dlls: [], patches: [], namespaces: [], usesHarmony: false }
     for (const dll of m.assemblies) {
-      const info = this.asmCache.get(dll)?.info ?? readAssembly(dll)
-      if (!this.asmCache.has(dll)) this.asmCache.set(dll, { mtime: m.mtime, info })
+      const cached = this.asmCache.get(dll)
+      const info = cached && cached.mtime === m.mtime ? cached.info : readAssembly(dll)
+      if (cached?.info !== info || cached?.mtime !== m.mtime) this.asmCache.set(dll, { mtime: m.mtime, info })
       if (!info) continue
       report.dlls.push({ file: basename(dll), name: info.name, version: info.version, references: info.references })
       report.patches.push(...info.patches)
@@ -581,7 +584,7 @@ export class Service {
     if (!file) return null
     const active = new Set(this.config?.activeMods ?? [])
     const mods = this.mods.filter((m) => active.has(m.packageId))
-    const a: Attribution = { namespaces: new Map(), packageIds: new Set(), names: new Map(), harmonyIds: new Map() }
+    const a: Attribution = { namespaces: new Map(), packageIds: new Set(), names: new Map() }
     for (const m of mods) {
       a.packageIds.add(m.packageId)
       a.names.set(m.name.toLowerCase(), m.packageId)
@@ -786,21 +789,14 @@ export class Service {
     // Quote-aware so -savedatafolder="C:\My Games\RimWorld" stays one argument.
     const args = (this.settings.launchArgs.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []).map((a) => a.replace(/"/g, ''))
     const child = spawn(exe, args, { cwd: p.gameDir, detached: true, stdio: 'ignore' })
-    this.gameRunning = true
-    child.on('exit', () => {
-      this.gameRunning = false
-      this.emit({ type: 'game-exited' })
+    const started = await new Promise<string | null>((resolve) => {
+      child.once('spawn', () => resolve(null))
+      child.once('error', (e) => resolve(e.message))
     })
+    if (started) return { ok: false, message: `RimWorld could not be started: ${started}` }
+    child.on('exit', () => this.emit({ type: 'game-exited' }))
     child.unref()
     return { ok: true, message: 'RimWorld started' }
-  }
-
-  async restoreBackup(file: string): Promise<ModsConfig | null> {
-    const dir = this.settings.paths.configDir
-    await copyFile(file, join(dir, 'ModsConfig.xml'))
-    this.config = await readModsConfig(dir)
-    this.lastWrite = this.config?.mtime ?? 0
-    return this.config
   }
 
   // ---- Workshop downloads (SteamCMD) and update checks ----
@@ -815,16 +811,13 @@ export class Service {
     return new Map(ids.filter((id) => this.details.has(id)).map((id) => [id, this.details.get(id)!.d]))
   }
 
-  async lookupWorkshop(ids: string[]): Promise<WorkshopDetails[]> {
-    return [...(await this.workshopDetails(ids)).values()]
-  }
-
   /** Flattens a Workshop collection, following nested collections (each visited once, so loops can't recurse forever). */
   async workshopCollection(id: string): Promise<WorkshopCollection> {
     if (!/^\d+$/.test(id)) throw new Error('Not a valid Workshop ID')
     const seen = new Set<string>([id])
     const nested: string[] = []
     const items: string[] = []
+    const itemSet = new Set<string>()
     let level = [id]
     while (level.length) {
       const found = await fetchCollections(level)
@@ -833,7 +826,10 @@ export class Service {
       for (const cid of level) {
         const c = found.get(cid)
         if (!c) continue
-        for (const x of c.items) if (!items.includes(x)) items.push(x)
+        for (const x of c.items) if (!itemSet.has(x)) {
+          itemSet.add(x)
+          items.push(x)
+        }
         for (const x of c.collections)
           if (!seen.has(x)) {
             seen.add(x)
@@ -1031,6 +1027,8 @@ export class Service {
         )
       } catch {}
     }
+    // A watched folder that is deleted or unplugged emits 'error'; without a listener that ends the app.
+    for (const w of this.watchers) w.on('error', () => w.close())
   }
 
   dispose() {
@@ -1038,12 +1036,6 @@ export class Service {
     this.steamcmd.cancel()
   }
 }
-
-export type ServiceMethod = Exclude<
-  keyof Service,
-  | 'dataDir' | 'emit' | 'settings' | 'user' | 'mods' | 'config' | 'gameVersion' | 'scanMs' | 'pathProblems' | 'lastWrite' | 'rules' | 'asmCache' | 'watchers' | 'rescanTimer' | 'gameRunning' | 'xmlCache' | 'defCache' | 'saving'
-  | 'steamcmd' | 'downloads' | 'downloadRecords' | 'details' | 'updateReport'
->
 
 // The mod's English translations (Languages/English/Keyed), used for labels in its settings window.
 const keyedCache = new Map<string, { mtime: number; map: Map<string, string> }>()

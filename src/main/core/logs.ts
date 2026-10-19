@@ -21,7 +21,6 @@ export interface Attribution {
   namespaces: Map<string, string> // namespace -> packageId
   packageIds: Set<string>
   names: Map<string, string> // lowercase mod name -> packageId
-  harmonyIds: Map<string, string>
 }
 
 // 1.7+: "2026-10-17 16:13:54.836 ERROR [Verse] message"
@@ -78,7 +77,7 @@ function attribute(message: string, stack: string[], a: Attribution): string[] {
   const top = frames.slice(0, 4)
   for (const h of harmony) {
     if (!top.some((f) => f === h.target || f.startsWith(h.target))) continue
-    add(modForType(h.owner, a) ?? a.harmonyIds.get(h.id.toLowerCase()) ?? (a.packageIds.has(h.id.toLowerCase()) ? h.id.toLowerCase() : undefined))
+    add(modForType(h.owner, a) ?? (a.packageIds.has(h.id.toLowerCase()) ? h.id.toLowerCase() : undefined))
   }
   for (const m of message.matchAll(/\b([A-Z][\w]*(?:\.[A-Z][\w]*)+)/g)) if (!GAME_NS.test(m[1])) add(modForType(m[1], a))
   const bracket = message.match(/^\[([^\]]{2,60})\]/)

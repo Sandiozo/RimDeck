@@ -135,7 +135,7 @@ export function ItemsView() {
           <Search size={13} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an item…" />
           {q && (
-            <button className="btn ghost sm icon" onClick={() => setQ('')}>
+            <button className="btn ghost sm icon" title="Clear search" aria-label="Clear search" onClick={() => setQ('')}>
               <X size={12} />
             </button>
           )}

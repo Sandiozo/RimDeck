@@ -99,10 +99,11 @@ export function ResearchView() {
   }, [shown])
   const modsHere = useMemo(() => [...new Set(shown.map((n) => n.packageId))], [shown])
 
-  // Two ways to draw a tab:
+  // Three ways to draw a tab:
   //  - 'tree': keeps the game's left-to-right columns (each distinct X gets its own lane, so half-steps don't
   //    collide sideways) and stacks each column in the game's top-to-bottom order without overlaps;
-  //  - 'game': the raw XML positions, with colliding nodes pushed down just enough to stay readable.
+  //  - 'game': the raw XML positions, with colliding nodes pushed down just enough to stay readable;
+  //  - 'era': one band per tech level, each split into columns of ERA_ROWS.
   const eraBands = useMemo(() => {
     const out: { label: string; list: ResearchNode[]; left: number; width: number }[] = []
     let x = 0
@@ -118,7 +119,7 @@ export function ResearchView() {
   const layout = useMemo(() => {
     const out = new Map<string, { left: number; top: number; moved: boolean }>()
     if (layoutMode === 'era') {
-      // One band per era (in tech order), each split into columns of ROWS so big eras stay viewable.
+      // One band per era (in tech order), each split into columns of ERA_ROWS so big eras stay viewable.
       for (const b of eraBands) b.list.forEach((n, i) => out.set(n.defName, { left: b.left + Math.floor(i / ERA_ROWS) * (W + 24), top: (i % ERA_ROWS) * (H + 10), moved: false }))
       return out
     }
@@ -154,7 +155,7 @@ export function ResearchView() {
       out.set(n.defName, { left, top, moved: Math.abs(top - n.y * SY) > 0.5 })
     }
     return out
-  }, [shown, layoutMode, dependents, eraBands])
+  }, [shown, layoutMode, eraBands])
   const at = (n: ResearchNode) => layout.get(n.defName) ?? { left: n.x * SX, top: n.y * SY, moved: false }
   const name = (pid: string) => s.installed.get(pid)?.[0]?.name ?? pid
 
@@ -264,7 +265,7 @@ export function ResearchView() {
           <Search size={13} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a project…" />
           {q && (
-            <button className="btn ghost sm icon" onClick={() => setQ('')}>
+            <button className="btn ghost sm icon" title="Clear search" aria-label="Clear search" onClick={() => setQ('')}>
               <X size={12} />
             </button>
           )}
@@ -371,17 +372,17 @@ Shown lower so that it is not hidden. In game it is at ${n.x.toFixed(2)}, ${n.y.
           {sel ? (
             <div className="details-body" style={{ marginTop: 0, paddingTop: 14, overflow: 'auto' }}>
               <div className="row" style={{ alignItems: 'flex-start' }}>
-                <FlaskConical size={18} color={TECH_COLOR[sel.techLevel] ?? 'var(--accent)'} style={{ marginTop: 3 }} />
+                <FlaskConical size={18} color={TECH_COLOR[sel.techLevel] ?? 'var(--accent-text)'} style={{ marginTop: 3 }} />
                 <div className="grow">
                   <h2 style={{ fontSize: 16 }}>{sel.label}</h2>
                   <div className="mono dim" style={{ fontSize: 11 }}>{sel.defName}</div>
                 </div>
-                <button className="btn sm ghost icon" onClick={() => setSelected(null)}>
+                <button className="btn sm ghost icon" title="Close" aria-label="Close" onClick={() => setSelected(null)}>
                   <X size={13} />
                 </button>
               </div>
               <div className="chips">
-                <span className="chip click" onClick={() => { s.select(sel.packageId); s.setView('mods') }}>
+                <span className="chip click" onClick={() => { s.showMod(sel.packageId) }}>
                   <ModIcon mod={s.installed.get(sel.packageId)?.[0]} size={12} /> {name(sel.packageId)}
                 </span>
                 <span className="chip" style={{ color: TECH_COLOR[sel.techLevel] }}>{sel.techLevel}</span>

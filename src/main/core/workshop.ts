@@ -58,7 +58,6 @@ export function parseVdf(text: string): Record<string, any> {
 
 export interface AcfItem {
   timeUpdated: number // version on disk
-  latestTimeUpdated: number // newest version Steam knows about (0 if unknown)
 }
 
 /** Steam's record of installed Workshop items: <library>/steamapps/workshop/appworkshop_294100.acf */
@@ -73,11 +72,7 @@ export async function readWorkshopAcf(workshopContentDir: string): Promise<Map<s
   }
   const acf = parseVdf(text).AppWorkshop ?? {}
   for (const [id, v] of Object.entries<any>(acf.WorkshopItemsInstalled ?? {}))
-    out.set(id, { timeUpdated: Number(v?.timeupdated) || 0, latestTimeUpdated: 0 })
-  for (const [id, v] of Object.entries<any>(acf.WorkshopItemDetails ?? {})) {
-    const item = out.get(id)
-    if (item) item.latestTimeUpdated = Number(v?.latest_timeupdated) || 0
-  }
+    out.set(id, { timeUpdated: Number(v?.timeupdated) || 0 })
   return out
 }
 

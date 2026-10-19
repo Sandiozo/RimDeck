@@ -8,8 +8,8 @@ import { ModIcon, Seg } from '../components/ui'
 type Scope = 'active' | 'all'
 
 function Hit({ hit, query, label }: { hit: XmlSearchHit; query: string; label?: string }) {
-  const s = useStore()
-  const mod = s.installed.get(hit.packageId)?.[0]
+  const installed = useStore((st) => st.installed)
+  const mod = installed.get(hit.packageId)?.[0]
   const rel = mod && hit.file.startsWith(mod.path) ? hit.file.slice(mod.path.length + 1) : hit.file
   const i = hit.text.toLowerCase().indexOf(query.toLowerCase())
   return (
@@ -74,7 +74,7 @@ export function SearchView() {
     return [...m.entries()]
   }, [res])
   const name = (pid: string) => s.installed.get(pid)?.[0]?.name ?? pid
-  const ModCell = ({ pid }: { pid: string }) => (
+  const modCell = (pid: string) => (
     <span style={{ width: 210, flex: 'none', paddingTop: 5 }} className="row">
       <ModIcon mod={s.installed.get(pid)?.[0]} size={18} />
       <span className="ellipsis" style={{ fontWeight: 560 }}>
@@ -137,7 +137,7 @@ export function SearchView() {
               <div className="panel-body col" style={{ gap: 4 }}>
                 {res.defines.map((d, i) => (
                   <div key={'d' + i} className="row" style={{ alignItems: 'flex-start' }}>
-                    <ModCell pid={d.packageId} />
+                    {modCell(d.packageId)}
                     <div className="grow" style={{ minWidth: 0 }}>
                       <Hit hit={d} query={res.query} label={'defines ' + d.key.split('/')[0]} />
                     </div>
@@ -145,7 +145,7 @@ export function SearchView() {
                 ))}
                 {res.patches.map((p, i) => (
                   <div key={'p' + i} className="row" style={{ alignItems: 'flex-start' }}>
-                    <ModCell pid={p.packageId} />
+                    {modCell(p.packageId)}
                     <div className="grow" style={{ minWidth: 0 }}>
                       <Hit hit={p} query={res.query} label={p.op.replace('PatchOperation', '') || 'Patch'} />
                     </div>
@@ -161,8 +161,7 @@ export function SearchView() {
                 className="panel-head"
                 style={{ cursor: 'pointer' }}
                 onClick={() => {
-                  s.select(pid)
-                  s.setView('mods')
+                  s.showMod(pid)
                 }}
               >
                 <ModIcon mod={s.installed.get(pid)?.[0]} size={20} />

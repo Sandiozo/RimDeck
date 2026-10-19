@@ -83,6 +83,10 @@ interface Store extends Derived {
   openSearch(q: string): void
   setPalette(open: boolean): void
   setActive(ids: string[], record?: boolean): void
+  /** Recomputes installed mods, problems and dependents after the app state or rules change. */
+  rederive(): void
+  /** Selects a mod, opens the Mods view and scrolls it into view. */
+  showMod(pid: string): void
   undo(): void
   redo(): void
   activate(ids: string[], at?: number): void
@@ -95,7 +99,8 @@ interface Store extends Derived {
   previewSort(): void
   applySort(): void
   closeSort(): void
-  save(): Promise<void>
+  /** True when ModsConfig.xml was written. */
+  save(): Promise<boolean>
   revert(): void
   acceptExternal(reload: boolean): Promise<void>
   applyFix(fix: Fix): void
@@ -175,7 +180,11 @@ export const useStore = create<Store>((set, get) => {
       future: record ? [] : s.future,
       ...derive(s.app, s.rules, active),
     })
-    // Activating/deactivating changes which mods' XML matters; reordering alone doesn't.
+    scheduleXml(active)
+  }
+
+  // Activating or deactivating changes which mods' XML matters; reordering alone doesn't.
+  const scheduleXml = (active: string[]) => {
     if (xmlFor && [...active].sort().join('|') !== xmlFor) {
       if (xmlTimer) clearTimeout(xmlTimer)
       xmlTimer = setTimeout(() => void get().refreshXml(), 800)
@@ -299,24 +308,37 @@ export const useStore = create<Store>((set, get) => {
 
     setActive: (ids, record = true) => commit([...new Set(ids)], {}, record),
 
+    rederive() {
+      const s = get()
+      set(derive(s.app, s.rules, s.active))
+    },
+
+    showMod(pid) {
+      set({ view: 'mods', selection: new Set([pid]), anchor: pid, focus: pid })
+      setTimeout(() => document.querySelector(`[data-pid="${CSS.escape(pid)}"]`)?.scrollIntoView({ block: 'center' }), 30)
+    },
+
     undo() {
       const s = get()
       const prev = s.past[s.past.length - 1]
       if (!prev) return
       set({ past: s.past.slice(0, -1), future: [s.active, ...s.future], active: prev, ...derive(s.app, s.rules, prev) })
+      scheduleXml(prev)
     },
     redo() {
       const s = get()
       const next = s.future[0]
       if (!next) return
       set({ future: s.future.slice(1), past: [...s.past, s.active], active: next, ...derive(s.app, s.rules, next) })
+      scheduleXml(next)
     },
 
     activate(ids, at) {
       const s = get()
-      const add = withDeps(ids.filter((id) => !s.active.includes(id)))
+      const fresh = ids.filter((id) => !s.active.includes(id))
+      const add = withDeps(fresh)
       if (!add.length) return
-      const deps = add.length - ids.length
+      const deps = add.length - fresh.length
       const list = [...s.active]
       list.splice(at ?? list.length, 0, ...add)
       commit(list)
@@ -383,8 +405,10 @@ export const useStore = create<Store>((set, get) => {
         const { config, user } = await api.saveModsConfig(s.active)
         set({ saved: s.active, externalChange: false, app: s.app && { ...s.app, config, user } })
         get().toast('ok', `Saved ${s.active.length} mods to ModsConfig.xml`)
+        return true
       } catch (e: any) {
         get().toast('error', `Save failed: ${e.message}`)
+        return false
       }
     },
     revert() {
@@ -460,7 +484,8 @@ export const useStore = create<Store>((set, get) => {
 
     async launch() {
       const s = get()
-      if (!same(s.active, s.saved)) await s.save()
+      // Never start the game with a load order that failed to save.
+      if (!same(s.active, s.saved) && !(await s.save())) return
       const r = await api.launch()
       get().toast(r.ok ? 'ok' : 'error', r.message)
     },

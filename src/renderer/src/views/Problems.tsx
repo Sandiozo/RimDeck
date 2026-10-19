@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Bug, CircleAlert, Info, TriangleAlert, WandSparkles, ArrowDownUp, EyeOff, ExternalLink, Check, Download } from 'lucide-react'
 import type { Issue, IssueKind } from '@shared/types'
 import { useStore } from '../store'
-import { ModIcon, SeverityIcon } from '../components/ui'
+import { clickable, ModIcon, SeverityIcon } from '../components/ui'
 
 const KIND_LABEL: Record<IssueKind, string> = {
   'missing-dep': 'Missing dependencies',
@@ -66,15 +66,15 @@ export function ProblemsView() {
       </div>
 
       <div className="cards">
-        <div className={'stat' + (sev === 'error' ? ' on' : '')} onClick={() => setSev(sev === 'error' ? 'all' : 'error')}>
+        <div className={'stat' + (sev === 'error' ? ' on' : '')} {...clickable(() => setSev(sev === 'error' ? 'all' : 'error'))}>
           <div className="n" style={{ color: counts.error ? 'var(--err)' : undefined }}>{counts.error}</div>
           <div className="l"><CircleAlert size={13} /> Errors</div>
         </div>
-        <div className={'stat' + (sev === 'warning' ? ' on' : '')} onClick={() => setSev(sev === 'warning' ? 'all' : 'warning')}>
+        <div className={'stat' + (sev === 'warning' ? ' on' : '')} {...clickable(() => setSev(sev === 'warning' ? 'all' : 'warning'))}>
           <div className="n" style={{ color: counts.warning ? 'var(--warn)' : undefined }}>{counts.warning}</div>
           <div className="l"><TriangleAlert size={13} /> Warnings</div>
         </div>
-        <div className={'stat' + (sev === 'info' ? ' on' : '')} onClick={() => setSev(sev === 'info' ? 'all' : 'info')}>
+        <div className={'stat' + (sev === 'info' ? ' on' : '')} {...clickable(() => setSev(sev === 'info' ? 'all' : 'info'))}>
           <div className="n" style={{ color: counts.info ? 'var(--info)' : undefined }}>{counts.info}</div>
           <div className="l"><Info size={13} /> Suggestions</div>
         </div>
@@ -116,7 +116,7 @@ export function ProblemsView() {
             const mod = s.installed.get(pid)?.[0]
             return (
               <div key={pid} className="prob-row">
-                <div className="prob-mod" onClick={() => { s.select(pid); s.setView('mods') }}>
+                <div className="prob-mod" {...clickable(() => s.showMod(pid))}>
                   <ModIcon mod={mod} size={22} />
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="ellipsis" style={{ fontWeight: 600 }}>{mod?.name ?? pid}</div>

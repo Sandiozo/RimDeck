@@ -1,5 +1,5 @@
 import { api } from './api'
-import { useStore } from './store'
+import { isDirty, useStore } from './store'
 
 export const steamUrl = (workshopId: string) => `steam://url/CommunityFilePage/${workshopId}`
 
@@ -54,5 +54,5 @@ export async function removeMods(pids: string[]) {
   // Don't leave the details panel pointing at a mod that no longer exists.
   const after = useStore.getState()
   if (after.focus && pids.includes(after.focus) && !after.installed.has(after.focus)) useStore.setState({ focus: null, selection: new Set() })
-  if (messages.length) s.toast('ok', messages.join(' · ') + (useStore.getState().active.join('|') !== useStore.getState().saved.join('|') ? '. Save your load order to finish.' : ''))
+  if (messages.length) s.toast('ok', messages.join(' · ') + (isDirty(useStore.getState()) ? '. Save your load order to finish.' : ''))
 }

@@ -1,6 +1,7 @@
-import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ModsConfig } from '../../shared/types.ts'
+import { atomicWrite } from './store.ts'
 import { escapeXml, parseXml, strList, text } from './xml.ts'
 
 export function modsConfigPath(configDir: string) {
@@ -47,20 +48,26 @@ export async function writeModsConfig(
   data: { version: string; activeMods: string[]; knownExpansions: string[] },
 ): Promise<{ backup: string | null; mtime: number }> {
   const file = modsConfigPath(configDir)
-  let backup: string | null = null
+  const backup = await backupModsConfig(configDir, backupDir)
+  await atomicWrite(file, serializeModsConfig(data.version, data.activeMods, data.knownExpansions))
+  const st = await stat(file)
+  return { backup, mtime: st.mtimeMs }
+}
+
+/** Copies the current ModsConfig.xml into the backup folder; null when there is none. */
+export async function backupModsConfig(configDir: string, backupDir: string): Promise<string | null> {
+  const file = modsConfigPath(configDir)
   try {
     await stat(file)
     await mkdir(backupDir, { recursive: true })
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    backup = join(backupDir, `ModsConfig-${stamp}.xml`)
+    const backup = join(backupDir, `ModsConfig-${stamp}.xml`)
     await copyFile(file, backup)
     await pruneBackups(backupDir, 30)
-  } catch {}
-  const tmp = file + '.rimdeck.tmp'
-  await writeFile(tmp, serializeModsConfig(data.version, data.activeMods, data.knownExpansions), 'utf8')
-  await rename(tmp, file)
-  const st = await stat(file)
-  return { backup, mtime: st.mtimeMs }
+    return backup
+  } catch {
+    return null
+  }
 }
 
 async function pruneBackups(dir: string, keep: number) {
@@ -75,7 +82,9 @@ export async function listBackups(dir: string): Promise<{ file: string; mtime: n
       files.map(async (f) => {
         const p = join(dir, f)
         const [raw, st] = await Promise.all([readFile(p, 'utf8'), stat(p)])
-        return { file: p, mtime: st.mtimeMs, count: (raw.match(/<li>/g) ?? []).length }
+        // Only the active mods count, not the <knownExpansions> list.
+        const active = raw.match(/<activeMods>([\s\S]*?)<\/activeMods>/i)?.[1] ?? ''
+        return { file: p, mtime: st.mtimeMs, count: (active.match(/<li>/g) ?? []).length }
       }),
     )
   } catch {

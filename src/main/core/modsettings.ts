@@ -1,9 +1,10 @@
 // Mod settings (Config/Mod_<folder>_<Class>.xml) reader/writer for the settings editor.
 // Uses a small dependency-free XML tokenizer/serializer tuned for RimWorld Scribe XML so an
 // unchanged tree round-trips to byte-identical output (UTF-8 BOM, CRLF, tab indentation).
-import { readFile, writeFile, readdir, stat, mkdir, rename, copyFile, unlink, access } from 'node:fs/promises'
+import { readFile, writeFile, readdir, stat, mkdir, copyFile, unlink } from 'node:fs/promises'
 import { join, basename, dirname } from 'node:path'
 import { execFile } from 'node:child_process'
+import { exists, renameRetry } from './store.ts'
 
 export interface SettingsNode {
   id: string
@@ -226,15 +227,6 @@ function stamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(d.getMilliseconds(), 3)}`
 }
 
-async function exists(p: string): Promise<boolean> {
-  try {
-    await access(p)
-    return true
-  } catch {
-    return false
-  }
-}
-
 async function backupTarget(path: string, backupDir: string): Promise<string> {
   await mkdir(backupDir, { recursive: true })
   const stem = basename(path).replace(/\.xml$/i, '')
@@ -242,19 +234,6 @@ async function backupTarget(path: string, backupDir: string): Promise<string> {
   let target = join(backupDir, `${base}.xml`)
   for (let n = 1; await exists(target); n++) target = join(backupDir, `${base}-${n}.xml`)
   return target
-}
-
-// Windows can briefly lock files (AV, indexer); retry transient rename failures
-async function renameRetry(from: string, to: string) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await rename(from, to)
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code
-      if (attempt >= 5 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) throw e
-      await new Promise((r) => setTimeout(r, 50 * (attempt + 1)))
-    }
-  }
 }
 
 async function moveFile(from: string, to: string) {

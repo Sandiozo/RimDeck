@@ -64,8 +64,12 @@ export function InstallsPanel() {
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter') {
-                    await api.renameInstall(i.id, draft)
-                    await load()
+                    try {
+                      await api.renameInstall(i.id, draft)
+                      await load()
+                    } catch (err: any) {
+                      useStore.getState().toast('error', err.message)
+                    }
                     setRenaming(null)
                   } else if (e.key === 'Escape') setRenaming(null)
                 }}
@@ -118,7 +122,7 @@ export function InstallsPanel() {
           <div className="row">
             <span style={{ width: 120 }} className="muted">Game folder</span>
             <input className="input grow mono" value={gameDir} placeholder="Folder with RimWorldWin64.exe and Data\Core" onChange={(e) => setGameDir(e.target.value)} />
-            <button className="btn icon" onClick={browseGame}>
+            <button className="btn icon" title="Browse for the game folder" aria-label="Browse for the game folder" onClick={browseGame}>
               <FolderOpen size={14} />
             </button>
           </div>

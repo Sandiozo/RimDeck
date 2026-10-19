@@ -36,7 +36,7 @@ export function ChangesBanner({ onFilter }: { onFilter: (q: string) => void }) {
   return (
     <>
       <div className="banner accent">
-        <History size={15} color="var(--accent)" />
+        <History size={15} color="var(--accent-text)" />
         <span className="grow">
           Since you last played ({timeAgo(c.since)}): <b>{parts.join(' · ')}</b>
         </span>
@@ -67,7 +67,7 @@ export function ChangesBanner({ onFilter }: { onFilter: (q: string) => void }) {
 function ChangesModal({ onClose }: { onClose: () => void }) {
   const s = useStore()
   const c = s.changes!
-  const Section = ({ title, ids, note }: { title: string; ids: string[]; note?: (pid: string) => string }) =>
+  const section = ({ title, ids, note }: { title: string; ids: string[]; note?: (pid: string) => string }) =>
     ids.length ? (
       <div className="d-section" style={{ margin: '0 8px 14px' }}>
         <h4>
@@ -76,7 +76,7 @@ function ChangesModal({ onClose }: { onClose: () => void }) {
         {ids.map((pid) => {
           const m = s.installed.get(pid)?.[0]
           return (
-            <div key={pid} className="d-item click" onClick={() => { s.select(pid); s.setView('mods'); onClose() }}>
+            <div key={pid} className="d-item click" onClick={() => { s.showMod(pid); onClose() }}>
               <ModIcon mod={m} size={18} />
               <span className="grow ellipsis">{m?.name ?? pid}</span>
               {note && <span className="dim" style={{ fontSize: 11.5 }}>{note(pid)}</span>}
@@ -105,7 +105,7 @@ function ChangesModal({ onClose }: { onClose: () => void }) {
     <div className="overlay" onMouseDown={onClose}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <History size={20} color="var(--accent)" style={{ marginTop: 2 }} />
+          <History size={20} color="var(--accent-text)" style={{ marginTop: 2 }} />
           <div className="grow">
             <h2>Changes since you last played</h2>
             <p>
@@ -115,11 +115,11 @@ function ChangesModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="modal-body">
-          <Section title="Updated (active)" ids={updatedActive} note={(p) => timeAgo(s.installed.get(p)?.[0]?.mtime ?? 0)} />
-          <Section title="Turned on" ids={c.activated} />
-          <Section title="Turned off" ids={c.deactivated} />
-          <Section title="Newly installed" ids={c.added} note={(p) => (active.has(p) ? 'active' : 'inactive')} />
-          <Section title="Updated (inactive)" ids={updatedInactive} />
+          {section({ title: 'Updated (active)', ids: updatedActive, note: (p) => timeAgo(s.installed.get(p)?.[0]?.mtime ?? 0) })}
+          {section({ title: 'Turned on', ids: c.activated })}
+          {section({ title: 'Turned off', ids: c.deactivated })}
+          {section({ title: 'Newly installed', ids: c.added, note: (p) => (active.has(p) ? 'active' : 'inactive') })}
+          {section({ title: 'Updated (inactive)', ids: updatedInactive })}
           {c.removed.length > 0 && (
             <div className="d-section" style={{ margin: '0 8px 14px' }}>
               <h4>

@@ -1,18 +1,33 @@
-import { memo, useEffect, useState, type ReactNode } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Box, CircleAlert, FolderOpen, Info, Package, TriangleAlert } from 'lucide-react'
 import type { Issue, ModInfo } from '@shared/types'
 import { imgUrl } from '../api'
 import { worst } from '../lib'
 
+/** Props that make a non-button element clickable with the keyboard too (Enter or Space). */
+export function clickable(fn: () => void) {
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: fn,
+    onKeyDown: (e: { key: string; preventDefault(): void }) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        fn()
+      }
+    },
+  }
+}
+
 export function Toggle({ on, onChange, title }: { on: boolean; onChange: (v: boolean) => void; title?: string }) {
-  return <button className={'toggle' + (on ? ' on' : '')} title={title} onClick={() => onChange(!on)} />
+  return <button type="button" role="switch" aria-checked={on} aria-label={title} className={'toggle' + (on ? ' on' : '')} title={title} onClick={() => onChange(!on)} />
 }
 
 export function Seg<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return (
     <div className="seg">
       {options.map(([v, label]) => (
-        <button key={v} className={v === value ? 'on' : ''} onClick={() => onChange(v)}>
+        <button key={v} type="button" aria-pressed={v === value} className={v === value ? 'on' : ''} onClick={() => onChange(v)}>
           {label}
         </button>
       ))}
@@ -68,6 +83,3 @@ export function IssueBadge({ issues }: { issues?: Issue[] }) {
   )
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="empty">{children}</div>
-}

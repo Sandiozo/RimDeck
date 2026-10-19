@@ -81,7 +81,7 @@ export function CollectionPanel() {
   return (
     <div className="panel" style={{ marginTop: 12 }}>
       <div className="panel-head">
-        <Layers size={14} color="var(--accent)" />
+        <Layers size={14} color="var(--accent-text)" />
         <h3 className="grow ellipsis">
           {c.title}
           <span className="dim" style={{ fontWeight: 400 }}>
@@ -135,7 +135,7 @@ export function CollectionPanel() {
                   <span
                     className="ellipsis"
                     style={{ fontWeight: 560, cursor: mod ? 'pointer' : undefined }}
-                    onClick={() => mod && (s.select(mod.packageId), s.setView('mods'))}
+                    onClick={() => mod && s.showMod(mod.packageId)}
                   >
                     {mod?.name ?? d.title}
                   </span>

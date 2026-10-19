@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { ArrowDownUp, Search, Layers, X, ListFilter } from 'lucide-react'
 import type { Issue, ModInfo, ModMeta } from '@shared/types'
 import { CATEGORY_LABEL } from '@shared/graph'
@@ -60,12 +60,14 @@ function FilterMenu({ query, setQuery }: { query: string; setQuery: (q: string) 
     if (!open) return
     const close = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false)
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const blur = () => setOpen(false)
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', esc as any)
-    window.addEventListener('blur', () => setOpen(false))
+    window.addEventListener('blur', blur)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', esc as any)
+      window.removeEventListener('blur', blur)
     }
   }, [open])
   const tokens = query.split(/\s+/).filter(Boolean)
@@ -178,30 +180,39 @@ export function ModList({ kind }: { kind: Kind }) {
 
   const visibleIds = useMemo(() => rows.map((r) => r.pid), [rows])
 
-  const onMouseDown = (e: MouseEvent, pid: string) => {
+  // Stable handlers keep the memoised rows from re-rendering on unrelated store changes.
+  const idsRef = useRef(visibleIds)
+  idsRef.current = visibleIds
+  const onMouseDown = useCallback((e: MouseEvent, pid: string) => {
+    const st = useStore.getState()
     if (e.button !== 0) {
-      if (!s.selection.has(pid)) s.select(pid)
+      if (!st.selection.has(pid)) st.select(pid)
       return
     }
-    if (e.ctrlKey || e.metaKey) s.select(pid, 'toggle')
-    else if (e.shiftKey) s.select(pid, 'range', visibleIds)
-    else if (!s.selection.has(pid) || s.selection.size === 1) s.select(pid)
-    else s.setFocus(pid)
-  }
-  const onDouble = (pid: string) => (kind === 'active' ? s.deactivate([pid]) : s.activate([pid]))
+    if (e.ctrlKey || e.metaKey) st.select(pid, 'toggle')
+    else if (e.shiftKey) st.select(pid, 'range', idsRef.current)
+    else if (!st.selection.has(pid) || st.selection.size === 1) st.select(pid)
+    else st.setFocus(pid)
+  }, [])
+  const onDouble = useCallback((pid: string) => {
+    const st = useStore.getState()
+    if (kind === 'active') st.deactivate([pid])
+    else st.activate([pid])
+  }, [kind])
 
-  const onDragStart = (e: DragEvent, pid: string) => {
-    const ids = s.selection.has(pid) ? visibleIds.filter((id) => s.selection.has(id)) : [pid]
+  const onDragStart = useCallback((e: DragEvent, pid: string) => {
+    const st = useStore.getState()
+    const ids = st.selection.has(pid) ? idsRef.current.filter((id) => st.selection.has(id)) : [pid]
     dragPayload = { ids, from: kind }
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', ids.join('\n'))
     const ghost = document.createElement('div')
-    ghost.textContent = ids.length > 1 ? `${ids.length} mods` : (s.installed.get(pid)?.[0]?.name ?? pid)
-    Object.assign(ghost.style, { position: 'fixed', top: '-100px', padding: '6px 12px', borderRadius: '8px', background: '#7c8cff', color: '#0b0c14', font: '600 12px Segoe UI' })
+    ghost.textContent = ids.length > 1 ? `${ids.length} mods` : (st.installed.get(pid)?.[0]?.name ?? pid)
+    Object.assign(ghost.style, { position: 'fixed', top: '-100px', padding: '6px 12px', borderRadius: '5px', background: 'var(--accent)', color: 'var(--on-accent)', font: '600 12px Segoe UI' })
     document.body.appendChild(ghost)
     e.dataTransfer.setDragImage(ghost, 10, 10)
     setTimeout(() => ghost.remove())
-  }
+  }, [kind])
 
   const onDragOver = (e: DragEvent) => {
     if (!dragPayload) return
@@ -217,7 +228,9 @@ export function ModList({ kind }: { kind: Kind }) {
       const top = row.offsetTop + (after ? row.offsetHeight : 0)
       if (drop?.index !== index || drop.top !== top) setDrop({ index, top })
     } else if (!drop) {
-      const last = list.querySelector('.mod-row:last-of-type') as HTMLElement | null
+      // Each row has its own wrapper, so :last-of-type would match every row.
+      const rows = list.querySelectorAll<HTMLElement>('.mod-row')
+      const last = rows[rows.length - 1]
       setDrop({ index: s.active.length, top: last ? last.offsetTop + last.offsetHeight : 4 })
     }
     // Auto-scroll while dragging near the edges.
@@ -271,7 +284,7 @@ export function ModList({ kind }: { kind: Kind }) {
     <section className="pane">
       <div className="pane-head">
         <span className="pane-title">{kind === 'active' ? 'Active' : 'Inactive'}</span>
-        <span className="count">{query ? `${rows.length}/` : ''}{kind === 'active' ? s.active.length : rows.length && !query ? rows.length : app.mods.length - s.activeMap.size}</span>
+        <span className="count">{query ? `${rows.length}/` : ''}{kind === 'active' ? s.active.length : rows.length && !query ? rows.length : s.installed.size - s.activeMap.size}</span>
         <span className="grow" />
         {kind === 'inactive' ? (
           <button
@@ -298,7 +311,7 @@ export function ModList({ kind }: { kind: Kind }) {
           onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
         />
         {query && (
-          <button className="btn ghost sm icon" onClick={() => setQuery('')}>
+          <button className="btn ghost sm icon" title="Clear search" aria-label="Clear search" onClick={() => setQuery('')}>
             <X size={12} />
           </button>
         )}

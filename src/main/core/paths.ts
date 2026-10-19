@@ -1,19 +1,12 @@
 import { execFile } from 'node:child_process'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Paths } from '../../shared/types.ts'
+import { exists } from './store.ts'
 
 const APP_ID = '294100'
 
-async function exists(p: string) {
-  try {
-    await stat(p)
-    return true
-  } catch {
-    return false
-  }
-}
 
 function regQuery(key: string, value: string): Promise<string | null> {
   return new Promise((resolve) => {

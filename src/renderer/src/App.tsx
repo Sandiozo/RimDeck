@@ -28,6 +28,8 @@ import iconSmall from './assets/icon-64.png'
 import iconLarge from './assets/icon-128.png'
 import type { UpdateState } from '@shared/types'
 import { isElectron, onEvent, api } from './api'
+import { useTheme } from './theme'
+import { clickable } from './components/ui'
 import { ModList } from './components/ModList'
 import { Details } from './components/Details'
 import { Palette, SortPreview, Toasts } from './components/Overlays'
@@ -97,6 +99,8 @@ export function App() {
     if (app?.settings.accent) document.documentElement.style.setProperty('--accent', app.settings.accent)
   }, [app?.settings.accent])
 
+  useTheme(app?.settings.theme ?? 'dark')
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState()
@@ -163,7 +167,7 @@ export function App() {
         <button className="btn ghost icon" title="Redo (Ctrl Y)" disabled={!s.future.length} onClick={s.redo}>
           <Redo2 size={15} />
         </button>
-        <div className="searchbox no-drag" onClick={() => s.setPalette(true)}>
+        <div className="searchbox no-drag" {...clickable(() => s.setPalette(true))}>
           <Search size={14} />
           <span className="grow">Search mods and commands</span>
           <span className="kbd">Ctrl K</span>
@@ -208,14 +212,14 @@ export function App() {
         )}
         {update?.phase === 'ready' && !updateDismissed && (
           <div className="banner accent">
-            <Download size={15} color="var(--accent)" />
+            <Download size={15} color="var(--accent-text)" />
             <span className="grow">
               RimDeck {update.version} is ready to install. Restart to update{dirty ? ' (save your load order first)' : ''}, or it will be installed when you close RimDeck.
             </span>
             <button className="btn sm primary" disabled={dirty} onClick={() => api.updateInstall()}>
               Restart now
             </button>
-            <button className="btn sm ghost icon" onClick={() => setUpdateDismissed(true)}>
+            <button className="btn sm ghost icon" title="Close" aria-label="Close" onClick={() => setUpdateDismissed(true)}>
               <X size={13} />
             </button>
           </div>
@@ -263,7 +267,7 @@ export function App() {
         <button className="item" onClick={() => s.setView('problems')}>
           {errors} errors · {warnings} warnings
         </button>
-        {dirty && <span className="item" style={{ color: 'var(--accent)' }}>Unsaved changes</span>}
+        {dirty && <span className="item" style={{ color: 'var(--accent-text)' }}>Unsaved changes</span>}
         <span className="grow" />
         <span className="item">RimWorld {app.gameVersion || '—'}</span>
         <span className="item">scan {app.scanMs} ms</span>
@@ -286,14 +290,14 @@ function BisectBanner() {
     const m = s.installed.get(b.culprit)?.[0]
     return (
       <div className="banner accent">
-        <Bug size={15} color="var(--accent)" />
+        <Bug size={15} color="var(--accent-text)" />
         <span className="grow">
-          Search complete: <b>{m?.name ?? b.culprit}</b> is the most likely cause. Your original list has been restored (not yet saved).
+          Search complete: <b>{m?.name ?? b.culprit}</b> is the most likely cause. Your original list has been restored and saved.
         </span>
-        <button className="btn sm" onClick={() => { s.select(b.culprit!); s.stopBisect(false) }}>
+        <button className="btn sm" onClick={() => { s.showMod(b.culprit!); s.stopBisect(false) }}>
           Show mod
         </button>
-        <button className="btn sm ghost icon" onClick={() => s.stopBisect(false)}>
+        <button className="btn sm ghost icon" title="Close" aria-label="Close" onClick={() => s.stopBisect(false)}>
           <X size={13} />
         </button>
       </div>
@@ -302,11 +306,11 @@ function BisectBanner() {
   const remaining = Math.ceil(Math.log2(Math.max(2, b.suspects.length)))
   return (
     <div className="banner accent">
-      <Bug size={15} color="var(--accent)" />
+      <Bug size={15} color="var(--accent-text)" />
       <span className="grow">
         <b>Step {b.step}</b> · testing {b.testing.length} of {b.suspects.length} suspects (about {remaining} more steps). Launch the game, then report whether the problem still occurs.
       </span>
-      <button className="btn sm play" onClick={() => api.launch()}>
+      <button className="btn sm play" onClick={() => s.launch()}>
         <Play size={12} fill="currentColor" /> Launch
       </button>
       <button className="btn sm" onClick={() => s.bisectAnswer(true)}>

@@ -97,10 +97,6 @@ export function richText(src: string): string {
   return out
 }
 
-export function plainText(src: string): string {
-  return src.replace(/<\/?(b|i|color|size)[^>]*>/gi, '')
-}
-
 export function timeAgo(ms: number): string {
   if (!ms) return 'never'
   const s = (Date.now() - ms) / 1000
@@ -118,7 +114,8 @@ export function bytes(n: number): string {
   return `${(n / 1024 ** 3).toFixed(2)} GB`
 }
 
-export const TAG_COLORS = ['#ff6b81', '#ff9f5a', '#f5c451', '#5fd38d', '#4fd1c5', '#5aa9ff', '#8b7bff', '#d77bff', '#9aa3b2']
+// Earthy marker colours that sit with the steel-and-rust theme.
+export const TAG_COLORS = ['#d9614c', '#d9792b', '#e2a83e', '#8fb854', '#4fb3a6', '#6f9fc4', '#8f86c4', '#b98aa8', '#a39e94']
 
 export function worst(issues: Issue[] | undefined): Issue['severity'] | null {
   if (!issues?.length) return null
@@ -130,7 +127,18 @@ export function worst(issues: Issue[] | undefined): Issue['severity'] | null {
 const NOISE_TERMS = new Set(['null', 'true', 'false', 'object', 'string', 'none', 'this', 'type', 'name', 'value', 'named', 'defname'])
 
 // Def names worth searching for in a log message, e.g. "No Verse.ThingDef named Foo" -> Foo.
+const termCache = new Map<string, string[]>()
+
 export function searchTerms(message: string): string[] {
+  const hit = termCache.get(message)
+  if (hit) return hit
+  if (termCache.size > 2000) termCache.clear()
+  const out = findSearchTerms(message)
+  termCache.set(message, out)
+  return out
+}
+
+function findSearchTerms(message: string): string[] {
   const out: string[] = []
   const patterns = [
     /\bnamed\s+["']?([A-Za-z_][\w\-]{2,})/g,

@@ -137,12 +137,14 @@ export function ContextMenu() {
       )}
       <hr />
       <div className="swatches" style={{ padding: '4px 8px 6px' }}>
-        <span className="swatch none" title="No color" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], color: undefined })))}>
+        <button type="button" className="swatch none" title="No color" aria-label="No color" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], color: undefined })))}>
           ×
-        </span>
+        </button>
         {TAG_COLORS.map((c) => (
-          <span
+          <button
+            type="button"
             key={c}
+            aria-label={`Color ${c}`}
             className={'swatch' + (meta?.color === c ? ' on' : '')}
             style={{ background: c }}
             onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], color: c })))}

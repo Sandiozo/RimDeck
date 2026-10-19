@@ -42,7 +42,7 @@ export function SortPreview() {
     <div className="overlay" onMouseDown={() => s.closeSort()}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <ArrowDownUp size={20} color="var(--accent)" style={{ marginTop: 2 }} />
+          <ArrowDownUp size={20} color="var(--accent-text)" style={{ marginTop: 2 }} />
           <div className="grow">
             <h2>{p.moves.length ? `Sort will move ${p.moves.length} ${p.moves.length === 1 ? 'mod' : 'mods'}` : 'Your load order is already sorted'}</h2>
             <p>
@@ -171,9 +171,7 @@ export function Palette() {
             hint: activeSet.has(m.packageId) ? `#${s.active.indexOf(m.packageId) + 1} active` : 'inactive',
             icon: <ModIcon mod={m} size={18} />,
             run: () => {
-              s.setView('mods')
-              s.select(m.packageId)
-              setTimeout(() => document.querySelector(`[data-pid="${CSS.escape(m.packageId)}"]`)?.scrollIntoView({ block: 'center' }), 30)
+              s.showMod(m.packageId)
             },
             group: 'Mods',
           })

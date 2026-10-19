@@ -14,7 +14,7 @@ export async function switchProfile(id: string) {
     const app = await api.switchProfile(id)
     const active = app.config?.activeMods ?? []
     useStore.setState({ app, active, saved: active, past: [], future: [], selection: new Set(), focus: null })
-    s.setActive(active, false)
+    s.rederive()
     useDefs.setState({ data: null, scannedFor: '' })
     void useStore.getState().refreshXml()
     void useStore.getState().refreshChanges()
@@ -65,7 +65,7 @@ export function ProfileSwitcher() {
                 if (p.id !== current?.id) void switchProfile(p.id)
               }}
             >
-              {p.id === current?.id ? <Check size={14} color="var(--accent)" /> : <span style={{ width: 14 }} />}
+              {p.id === current?.id ? <Check size={14} color="var(--accent-text)" /> : <span style={{ width: 14 }} />}
               <span className="grow" style={{ minWidth: 0 }}>
                 <span className="ellipsis" style={{ display: 'block', fontWeight: 560 }}>{p.name}</span>
                 <span className="ellipsis dim" style={{ display: 'block', fontSize: 11 }}>

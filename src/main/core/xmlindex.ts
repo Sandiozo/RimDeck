@@ -45,10 +45,21 @@ async function folderCI(root: string, name: string): Promise<string | null> {
   }
 }
 
-const lineAt = (text: string, idx: number) => {
-  let n = 1
-  for (let i = text.indexOf('\n'); i !== -1 && i < idx; i = text.indexOf('\n', i + 1)) n++
-  return n
+// Line numbers for offsets in one file. Offsets mostly increase, so counting continues from the last one.
+function lineCounter(text: string) {
+  let at = 0
+  let line = 1
+  return (idx: number) => {
+    if (idx < at) {
+      at = 0
+      line = 1
+    }
+    for (let i = text.indexOf('\n', at); i !== -1 && i < idx; i = text.indexOf('\n', i + 1)) {
+      line++
+      at = i + 1
+    }
+    return line
+  }
 }
 
 const TAG_RE = /<(\/?)([A-Za-z_][\w.:-]*)([^>]*?)(\/?)>/g
@@ -61,6 +72,7 @@ function blank(text: string) {
 
 function scanDefs(raw: string, file: string, out: ModXml) {
   const text = blank(raw)
+  const lineAt = lineCounter(text)
   let depth = 0
   let current: { type: string; start: number; name?: string; abstractName?: string } | null = null
   TAG_RE.lastIndex = 0
@@ -70,8 +82,8 @@ function scanDefs(raw: string, file: string, out: ModXml) {
     if (close) {
       depth--
       if (depth === 1 && current) {
-        if (current.name) out.defs.push({ key: `${current.type}/${current.name}`, file, line: lineAt(text, current.start) })
-        if (current.abstractName) out.defs.push({ key: `abstract/${current.abstractName}`, file, line: lineAt(text, current.start) })
+        if (current.name) out.defs.push({ key: `${current.type}/${current.name}`, file, line: lineAt(current.start) })
+        if (current.abstractName) out.defs.push({ key: `abstract/${current.abstractName}`, file, line: lineAt(current.start) })
         current = null
       }
       continue
@@ -88,7 +100,7 @@ function scanDefs(raw: string, file: string, out: ModXml) {
     }
     if (!selfClose) depth++
     else if (depth === 1 && current) {
-      if (current.abstractName) out.defs.push({ key: `abstract/${current.abstractName}`, file, line: lineAt(text, current.start) })
+      if (current.abstractName) out.defs.push({ key: `abstract/${current.abstractName}`, file, line: lineAt(current.start) })
       current = null
     }
   }
@@ -103,6 +115,7 @@ export function parseXpath(xpath: string): { defs: string[]; node: string } {
 
 function scanPatches(raw: string, file: string, out: ModXml) {
   const text = blank(raw)
+  const lineAt = lineCounter(text)
   const classes: { idx: number; cls: string }[] = []
   for (const m of text.matchAll(/Class\s*=\s*"([^"]+)"/g)) classes.push({ idx: m.index!, cls: m[1].split('.').pop()! })
   for (const m of text.matchAll(/<xpath>([\s\S]*?)<\/xpath>/g)) {
@@ -110,7 +123,7 @@ function scanPatches(raw: string, file: string, out: ModXml) {
     let op = 'PatchOperation'
     for (const c of classes) if (c.idx < m.index!) op = c.cls
     const { defs, node } = parseXpath(xpath)
-    out.patches.push({ file, line: lineAt(text, m.index!), op, xpath, defs, node })
+    out.patches.push({ file, line: lineAt(m.index!), op, xpath, defs, node })
   }
   for (const m of text.matchAll(/<mods>([\s\S]*?)<\/mods>/g)) for (const li of m[1].matchAll(/<li>([^<]+)<\/li>/g)) out.findMods.push(li[1].trim())
   for (const m of text.matchAll(/MayRequire\s*=\s*"([^"]+)"/g)) for (const p of m[1].split(',')) out.mayRequire.push(p.trim().toLowerCase())
@@ -178,14 +191,14 @@ export function buildXmlReport(mods: ModInfo[], indexes: ModXml[], ms: number): 
 
   // B "refers to" A when it targets A with FindMod, MayRequire, or inherits A's abstract defs.
   const byId = new Map(mods.map((m, i) => [m.packageId, i]))
+  const abstracts = indexes.map((x) => new Set(x.defs.filter((d) => d.key.startsWith('abstract/')).map((d) => d.key.slice(9))))
   const refers = (b: number, a: number) => {
     const A = mods[a]
     const X = indexes[b]
-    const abstracts = new Set(indexes[a].defs.filter((d) => d.key.startsWith('abstract/')).map((d) => d.key.slice(9)))
     return (
       X.findMods.some((n) => n.toLowerCase() === A.name.toLowerCase()) ||
       X.mayRequire.includes(A.packageId) ||
-      X.parents.some((p) => abstracts.has(p))
+      X.parents.some((p) => abstracts[a].has(p))
     )
   }
   const inferred: RuleMap = {}

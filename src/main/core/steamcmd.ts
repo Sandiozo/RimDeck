@@ -4,6 +4,7 @@ import { join, relative, resolve } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { DownloadJob, DownloadsState, SteamAccount, SteamLoginState, WorkshopDetails } from '../../shared/types.ts'
 import { APP_ID } from './workshop.ts'
+import { exists } from './store.ts'
 
 const IS_WIN = process.platform === 'win32'
 const INSTALLER = IS_WIN
@@ -14,14 +15,6 @@ const INSTALLER = IS_WIN
 const BATCH = 20 // items per SteamCMD session
 const MAX_ATTEMPTS = 3 // SteamCMD resumes timed-out downloads on the next run
 
-async function exists(p: string) {
-  try {
-    await stat(p)
-    return true
-  } catch {
-    return false
-  }
-}
 
 // Just enough of the zip format for Valve's installer (stored or deflated entries, no zip64).
 function unzip(buf: Buffer): { name: string; data: Buffer }[] {

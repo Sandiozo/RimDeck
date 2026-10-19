@@ -173,15 +173,6 @@ function parseHeader(buf: Uint8Array): Header | null {
   return h
 }
 
-export function ddsInfo(buf: Uint8Array): { width: number; height: number; format: string } | null {
-  try {
-    const h = parseHeader(buf)
-    return h ? { width: h.width, height: h.height, format: h.format } : null
-  } catch {
-    return null
-  }
-}
-
 // ---------------------------------------------------------------- block helpers
 
 const TMP = new Uint32Array(16)
