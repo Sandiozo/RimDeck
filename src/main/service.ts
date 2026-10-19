@@ -110,6 +110,8 @@ export class Service {
   asmCache = new Map<string, { mtime: number; info: AssemblyInfo | null }>()
   watchers: FSWatcher[] = []
   rescanTimer: NodeJS.Timeout | null = null
+  // What the mod folders looked like at the last scan; see modsFingerprint.
+  scannedFingerprint = ''
   steamcmd: SteamCmd
   downloads: DownloadQueue
   downloadRecords: DownloadRecords = {}
@@ -266,7 +268,25 @@ export class Service {
     this.config = config
     this.mods = await scanAll(p, majorOf(version))
     this.scanMs = Math.round(performance.now() - t)
+    this.scannedFingerprint = await this.modsFingerprint()
     if (emit) this.emit({ type: 'mods-changed' })
+  }
+
+  // Mod folder names plus the file times of each mod's About.xml and LoadFolders.xml: everything a
+  // rescan would pick up. Windows can report a file as changed when it is only read (last-access
+  // times), so the watcher compares this before rescanning instead of trusting the event.
+  async modsFingerprint(): Promise<string> {
+    const p = this.settings.paths
+    const parts: string[] = []
+    for (const dir of [p.localModsDir, p.workshopDir]) {
+      if (!dir) continue
+      const names = await readdir(dir).catch(() => [] as string[])
+      parts.push(`${dir}:${names.sort().join('|')}`)
+    }
+    const time = (f: string) => stat(f).then((st) => st.mtimeMs, () => 0)
+    const mods = this.mods.filter((m) => m.source === 'local' || m.source === 'workshop')
+    const times = await Promise.all(mods.map(async (m) => `${m.path}:${await time(join(m.path, 'About', 'About.xml'))},${await time(join(m.path, 'LoadFolders.xml'))}`))
+    return parts.concat(times).join('\n')
   }
 
   state(): AppState {
@@ -1038,7 +1058,13 @@ export class Service {
     const p = this.settings.paths
     const queueRescan = () => {
       if (this.rescanTimer) clearTimeout(this.rescanTimer)
-      this.rescanTimer = setTimeout(() => this.rescan().catch(() => {}), 1200)
+      this.rescanTimer = setTimeout(async () => {
+        try {
+          if ((await this.modsFingerprint()) !== this.scannedFingerprint) await this.rescan()
+        } catch {
+          // a folder that disappeared mid-check; the next event tries again
+        }
+      }, 1200)
     }
     for (const dir of [p.localModsDir, p.workshopDir]) {
       if (!dir) continue
