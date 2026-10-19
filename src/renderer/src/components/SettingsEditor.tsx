@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { create } from 'zustand'
-import { ChevronDown, ChevronRight, RotateCcw, Save, Search, SlidersHorizontal, TriangleAlert, Undo2, FolderOpen } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Pencil, RotateCcw, Save, Search, SlidersHorizontal, TriangleAlert, Undo2, FolderOpen } from 'lucide-react'
 import type { SettingsFile, SettingsNode } from '@shared/types'
 import { useStore } from '../store'
 import { api } from '../api'
@@ -76,42 +76,115 @@ export function ModSettingsSection({ folder }: { folder: string }) {
 interface Row {
   node: SettingsNode
   depth: number
+  /** Readable name shown in the row. */
   label: string
+  /** Where the name came from (tag, class or namespace), shown dimmed. */
+  hint?: string
+  /** Readable path from the top, used for search and tooltips. */
   path: string
+  group: boolean
+  count: number
+}
+
+// "overviewLetterSent" → "Overview letter sent", "IsInValidBestStorage_Patch" → "Is in valid best storage patch"
+function humanize(name: string): string {
+  const words = name
+    .replace(/^m?_+/, '')
+    .replace(/_+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .trim()
+    .split(/\s+/)
+  if (!words[0]) return name
+  return words.map((w, i) => (/^[A-Z0-9]{2,}s?$/.test(w) ? w : i ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase())).join(' ')
+}
+
+// Type names and dotted patch names keep their namespace as a hint.
+function tagLabel(tag: string): { label: string; hint?: string } {
+  const dot = tag.lastIndexOf('.')
+  if (dot < 0) return { label: humanize(tag) }
+  return { label: humanize(tag.slice(dot + 1)), hint: tag.slice(0, dot) }
+}
+
+const NAME_FIELDS = ['key', 'defName', 'def', 'thingDef', 'label', 'name', 'id']
+const isLeaf = (n?: SettingsNode) => !!n && !n.children
+
+// A list entry is named after its key or def when it has one, otherwise after its class, otherwise its position.
+function itemLabel(n: SettingsNode, i: number): { label: string; hint?: string; from?: SettingsNode } {
+  for (const f of NAME_FIELDS) {
+    const c = n.children?.find((x) => x.tag === f && isLeaf(x) && x.text)
+    if (c) return { label: c.text!, from: f === 'key' ? c : undefined }
+  }
+  const cls = n.attrs?.Class
+  if (cls) {
+    return { label: tagLabel(cls).label }
+  }
+  return { label: `#${i + 1}` }
 }
 
 function flatten(root: SettingsNode): Row[] {
   const rows: Row[] = []
-  const walk = (n: SettingsNode, depth: number, trail: string[]) => {
+  const walk = (n: SettingsNode, depth: number, trail: string[], skip?: SettingsNode) => {
     for (const [i, c] of (n.children ?? []).entries()) {
+      if (c === skip) continue
       // The ModSettings wrapper adds no information.
-      if (depth === 0 && c.tag === 'ModSettings') {
+      if (depth === 0 && c.tag === 'ModSettings' && c.children) {
         walk(c, 0, trail)
         continue
       }
-      const label = c.tag === 'li' ? `[${i}]` : c.tag
-      const path = [...trail, label].join(' › ')
-      rows.push({ node: c, depth, label, path })
-      // Scribe dictionaries are <keys> and <values> lists; show each value next to its key instead.
+      // A "key" that already names its entry is not repeated inside it.
+      const { label, hint, from } = c.tag === 'li' ? itemLabel(c, i) : { ...tagLabel(c.tag), from: undefined }
+      const path = [...trail, label]
+      // Scribe dictionaries are <keys> and <values> lists; show each value under its key instead.
       const keys = c.children?.find((x) => x.tag === 'keys')
       const values = c.children?.find((x) => x.tag === 'values')
-      const leaves = (x?: SettingsNode) => !!x?.children?.every((li) => li.tag === 'li' && li.text !== undefined)
-      if (c.children?.length === 2 && keys && values && leaves(keys) && leaves(values) && keys.children!.length === values.children!.length) {
-        values.children!.forEach((v, k) => {
-          const key = keys.children![k].text || `[${k}]`
-          rows.push({ node: v, depth: depth + 1, label: key, path: [...trail, label, key].join(' › ') })
+      if (
+        c.children?.length === 2 &&
+        keys?.children &&
+        values?.children &&
+        keys.children.length === values.children.length &&
+        keys.children.every((k) => k.tag === 'li' && isLeaf(k))
+      ) {
+        rows.push({ node: c, depth, label, hint, path: path.join(' › '), group: true, count: keys.children.length })
+        values.children.forEach((v, k) => {
+          const key = keys.children![k].text || `#${k + 1}`
+          const p = [...path, key]
+          rows.push({ node: v, depth: depth + 1, label: key, path: p.join(' › '), group: !!v.children, count: v.children?.length ?? 0 })
+          if (v.children) walk(v, depth + 2, p)
         })
         continue
       }
-      if (c.children) walk(c, depth + 1, [...trail, label])
+      rows.push({ node: c, depth, label, hint, path: path.join(' › '), group: !!c.children, count: (c.children?.length ?? 0) - (from ? 1 : 0) })
+      if (c.children) walk(c, depth + 1, path, from)
     }
   }
   walk(root, 0, [])
   return rows
 }
 
+// Big files open with their groups folded so the window stays readable.
+function initialCollapsed(rows: Row[]): Set<string> {
+  if (rows.length <= 250) return new Set()
+  return new Set(rows.filter((r) => r.group && (r.depth > 0 || r.count > 30)).map((r) => r.node.id))
+}
+
+// Empty collections are written as empty elements too; they cannot take a typed value.
+const listName = (tag: string) => /(keys|values|list|set|dict|dictionary|[^su]s)$/i.test(tag)
 const isBool = (v: string) => v === 'True' || v === 'False'
 const isNum = (v: string) => /^-?\d+(\.\d+)?(E[+-]?\d+)?$/i.test(v)
+const RGBA = /^RGBA\(\s*([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\s*\)$/
+
+function rgbaToHex(v: string): string | null {
+  const m = RGBA.exec(v)
+  if (!m) return null
+  return '#' + [m[1], m[2], m[3]].map((x) => Math.round(Math.min(1, Math.max(0, +x)) * 255).toString(16).padStart(2, '0')).join('')
+}
+
+function hexToRgba(hex: string, old: string): string {
+  const a = RGBA.exec(old)?.[4] ?? '1.000'
+  const c = [1, 3, 5].map((i) => (parseInt(hex.slice(i, i + 2), 16) / 255).toFixed(3))
+  return `RGBA(${c.join(', ')}, ${a})`
+}
 
 export function SettingsEditor() {
   const s = useStore()
@@ -120,6 +193,7 @@ export function SettingsEditor() {
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [q, setQ] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set())
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const reloadFiles = useSettingsFiles((x) => x.load)
@@ -128,19 +202,31 @@ export function SettingsEditor() {
     if (!path) return
     setRoot(null)
     setEdits({})
+    setUnlocked(new Set())
+    setQ('')
     setError('')
-    api.readModSettings(path).then(setRoot, (e) => setError(e.message))
+    api.readModSettings(path).then((r) => {
+      setRoot(r)
+      setCollapsed(initialCollapsed(flatten(r)))
+    }, (e) => setError(e.message))
     api.gameRunning().then(setRunning)
   }, [path])
 
   const rows = useMemo(() => (root ? flatten(root) : []), [root])
+  const values = useMemo(() => rows.filter((r) => !r.group).length, [rows])
   const visible = useMemo(() => {
     const t = q.trim().toLowerCase()
-    const hiddenUnder = [...collapsed]
-    return rows.filter((r) => {
-      if (t) return r.node.text !== undefined && (r.path.toLowerCase().includes(t) || (edits[r.node.id] ?? r.node.text ?? '').toLowerCase().includes(t))
-      return !hiddenUnder.some((id) => r.node.id !== id && r.node.id.startsWith(id + '/'))
-    })
+    if (t) return rows.filter((r) => !r.group && (r.path.toLowerCase().includes(t) || r.node.tag.toLowerCase().includes(t) || (edits[r.node.id] ?? r.node.text ?? '').toLowerCase().includes(t)))
+    // Rows are in tree order, so everything deeper than a folded group belongs to it.
+    const out: Row[] = []
+    let foldDepth = Infinity
+    for (const r of rows) {
+      if (r.depth > foldDepth) continue
+      foldDepth = Infinity
+      out.push(r)
+      if (r.group && collapsed.has(r.node.id)) foldDepth = r.depth
+    }
+    return out
   }, [rows, q, collapsed, edits])
 
   if (!path) return null
@@ -150,6 +236,7 @@ export function SettingsEditor() {
     ? s.app?.mods.find((m) => m.folder === folder)
     : s.app?.mods.find((m) => (m.source === 'local' || m.source === 'workshop') && file.toLowerCase().startsWith(`mod_${m.folder.toLowerCase()}_`))
   const changed = Object.keys(edits).length
+  const groups = rows.filter((r) => r.group)
   const close = () => {
     if (changed && !confirm('Discard your unsaved changes?')) return
     useStore.setState({ settingsEditor: null })
@@ -182,6 +269,51 @@ export function SettingsEditor() {
     setEdits(next)
   }
 
+  const toggle = (id: string) => {
+    const next = new Set(collapsed)
+    next.has(id) ? next.delete(id) : next.add(id)
+    setCollapsed(next)
+  }
+
+  const control = (n: SettingsNode) => {
+    const val = edits[n.id] ?? n.text ?? ''
+    if (n.attrs?.IsNull === 'True') return <span className="setting-tag">Not set</span>
+    // Empty elements are usually objects that only hold default values; editing them is opt-in.
+    if (n.text === '' && !(n.id in edits) && !unlocked.has(n.id)) {
+      return (
+        <>
+          <span className="setting-tag">{n.attrs?.Class ? 'Default values' : listName(n.tag) ? 'No entries' : 'Empty'}</span>
+          {!n.attrs?.Class && !listName(n.tag) && (
+            <button className="btn sm ghost icon" title="Enter a value" onClick={() => setUnlocked(new Set(unlocked).add(n.id))}>
+              <Pencil size={11} />
+            </button>
+          )}
+        </>
+      )
+    }
+    if (isBool(n.text!)) return <Toggle on={val === 'True'} onChange={(v) => setVal(n, v ? 'True' : 'False')} />
+    const hex = rgbaToHex(n.text!)
+    if (hex) {
+      return (
+        <>
+          <input type="color" className="setting-color" value={rgbaToHex(val) ?? hex} onChange={(e) => setVal(n, hexToRgba(e.target.value, val))} />
+          <input className="input mono setting-input wide" value={val} onChange={(e) => setVal(n, e.target.value)} spellCheck={false} />
+        </>
+      )
+    }
+    const num = isNum(n.text!)
+    return (
+      <input
+        className={'input mono setting-input' + (num ? ' num' : '') + (n.text!.length > 32 ? ' wide' : '') + (num && !isNum(val) ? ' bad' : '')}
+        value={val}
+        placeholder="empty"
+        onChange={(e) => setVal(n, e.target.value)}
+        spellCheck={false}
+        autoFocus={n.text === '' && unlocked.has(n.id) && !(n.id in edits)}
+      />
+    )
+  }
+
   return (
     <div className="overlay" onMouseDown={close}>
       <div className="modal" style={{ width: 'min(900px, 94vw)', maxHeight: '86vh' }} onMouseDown={(e) => e.stopPropagation()}>
@@ -204,66 +336,64 @@ export function SettingsEditor() {
             </button>
           </div>
         )}
-        <div style={{ padding: '0 16px 10px' }}>
-          <label className="pane-filter" style={{ margin: 0 }}>
+        <div className="row" style={{ padding: '0 16px 10px', gap: 6 }}>
+          <label className="pane-filter grow" style={{ margin: 0 }}>
             <Search size={13} />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter settings by name or value…" autoFocus />
-            <span className="count">{rows.filter((r) => r.node.text !== undefined).length}</span>
+            <span className="count">{values}</span>
           </label>
+          {groups.length > 0 && (
+            <>
+              <button className="btn sm ghost icon" title="Expand all" disabled={!!q} onClick={() => setCollapsed(new Set())}>
+                <ChevronsUpDown size={13} />
+              </button>
+              <button className="btn sm ghost icon" title="Collapse all" disabled={!!q} onClick={() => setCollapsed(new Set(groups.map((r) => r.node.id)))}>
+                <ChevronsDownUp size={13} />
+              </button>
+            </>
+          )}
         </div>
         <div className="modal-body settings-body">
           {error && <div className="empty">{error}</div>}
           {!root && !error && <div className="empty">Reading…</div>}
+          {root && !rows.length && <div className="empty">This file has no saved values.</div>}
           {visible.slice(0, 600).map((r) => {
             const n = r.node
-            const leaf = n.text !== undefined
-            const nul = n.attrs?.IsNull === 'True'
-            const val = edits[n.id] ?? n.text ?? ''
             const dirty = n.id in edits
+            const indent = 8 + (q ? 0 : r.depth * 18)
+            if (r.group) {
+              const open = !collapsed.has(n.id)
+              return (
+                <div key={n.id} className={'setting-row group' + (r.depth === 0 ? ' top' : '')} style={{ paddingLeft: indent }} onClick={() => toggle(n.id)}>
+                  <span className="caret">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+                  <span className="setting-name grow" title={n.tag}>
+                    <span className="ellipsis">{r.label}</span>
+                    {r.hint && <span className="setting-hint">{r.hint}</span>}
+                  </span>
+                  <span className="setting-count">
+                    {r.count} {r.count === 1 ? 'entry' : 'entries'}
+                  </span>
+                </div>
+              )
+            }
             return (
-              <div key={n.id} className={'setting-row' + (dirty ? ' dirty' : '')} style={{ paddingLeft: 10 + (q ? 0 : r.depth * 16) }}>
-                {leaf ? (
-                  <span className="caret" />
-                ) : (
-                  <button
-                    className="caret"
-                    onClick={() => {
-                      const next = new Set(collapsed)
-                      next.has(n.id) ? next.delete(n.id) : next.add(n.id)
-                      setCollapsed(next)
-                    }}
-                  >
-                    {collapsed.has(n.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                  </button>
-                )}
-                <span className={'grow ellipsis ' + (leaf ? '' : 'dim')} title={r.path}>
-                  {q ? r.path : r.label}
-                  {!leaf && <span className="dim"> · {n.children?.length ?? 0}</span>}
+              <div key={n.id} className={'setting-row' + (dirty ? ' dirty' : '')} style={{ paddingLeft: indent }}>
+                <span className="caret" />
+                <span className="setting-name grow" title={`${r.path}\n${n.tag}`}>
+                  <span className="ellipsis">{q ? r.path : r.label}</span>
+                  {!q && r.hint && <span className="setting-hint">{r.hint}</span>}
                 </span>
-                {leaf &&
-                  (nul ? (
-                    <span className="dim mono" style={{ fontSize: 11 }}>
-                      null
-                    </span>
-                  ) : isBool(n.text!) ? (
-                    <Toggle on={val === 'True'} onChange={(v) => setVal(n, v ? 'True' : 'False')} />
-                  ) : (
-                    <input
-                      className={'input mono setting-input' + (isNum(n.text!) && !isNum(val) ? ' bad' : '')}
-                      value={val}
-                      onChange={(e) => setVal(n, e.target.value)}
-                      spellCheck={false}
-                    />
-                  ))}
+                {control(n)}
                 {dirty && (
-                  <button className="btn sm ghost icon" title={`Undo (was ${n.text})`} onClick={() => setVal(n, n.text!)}>
+                  <button className="btn sm ghost icon" title={`Undo (was ${n.text || 'empty'})`} onClick={() => setVal(n, n.text!)}>
                     <Undo2 size={11} />
                   </button>
                 )}
               </div>
             )
           })}
-          {visible.length > 600 && <div className="empty">Showing 600 of {visible.length}. Use the filter to narrow it down.</div>}
+          {visible.length > 600 && <div className="empty">Showing 600 of {visible.length}. Use the filter or collapse groups to narrow it down.</div>}
+          {q && root && !visible.length && <div className="empty">No settings match “{q}”.</div>}
         </div>
         <div className="modal-foot">
           <span className="grow dim" style={{ alignSelf: 'center', fontSize: 12 }}>
