@@ -6,7 +6,7 @@ A fast, modern mod manager for RimWorld 1.7. Dark, compact, keyboard-friendly.
 
 - **Installer:** `RimDeck-Setup-<version>.exe` from [Releases](https://github.com/Sandiozo/RimDeck/releases) (start-menu and desktop shortcuts, uninstaller). It's unsigned, so SmartScreen may ask once. Installed copies update themselves from GitHub releases.
 - **From source:** `npm install`, then `npm run dev`. On npm 11, run `node node_modules/electron/install.js` once if the Electron binary is missing.
-- **Build the installer:** `npm run dist`. **Publish a release:** bump `version` in package.json, then `npm run release` with a `GH_TOKEN` that can write to the repository; it uploads the installer and the update manifest.
+- **Build the installer:** `npm run dist`. **Publish a release:** bump `version` in package.json, then `npm run release` (needs the GitHub CLI logged in to an account that can write to the repository). It builds once and uploads the installer, its blockmap and `latest.yml` together, which auto-update needs to match.
 - **README screenshots:** `npm run screenshots` (saves to `docs/screenshots/`; skips screens that show local paths).
 
 On first start RimDeck reads your paths from RimSort (or finds RimWorld through Steam), and imports RimSort's rules, ignored mods, colors and notes.
