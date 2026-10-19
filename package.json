@@ -1,0 +1,78 @@
+{
+  "name": "rimdeck",
+  "productName": "RimDeck",
+  "version": "1.0.0",
+  "description": "A fast, modern mod manager for RimWorld",
+  "main": "out/main/index.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win --x64 --publish never",
+    "release": "electron-vite build && electron-builder --win --x64 --publish always",
+    "screenshots": "electron-vite build && node -e \"process.env.RD_SCREENSHOTS='docs/screenshots';require('child_process').spawnSync(require('electron'),['.'],{stdio:'inherit',env:process.env})\""
+  },
+  "build": {
+    "appId": "dev.rimdeck.app",
+    "productName": "RimDeck",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RimDeck",
+      "artifactName": "RimDeck-Setup-${version}.exe",
+      "uninstallDisplayName": "RimDeck"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Sandiozo",
+        "repo": "RimDeck",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "fast-xml-parser": "^5.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "lucide-react": "^1.59.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "5.9",
+    "vite": "^8.3.4",
+    "zustand": "^5.0.15"
+  },
+  "author": "Sandiozo",
+  "homepage": "https://github.com/Sandiozo/RimDeck",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sandiozo/RimDeck.git"
+  }
+}
