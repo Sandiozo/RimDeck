@@ -186,15 +186,16 @@
     <div class="hero">
       <div class="eyebrow">RimWorld mod manager · free and open source</div>
       <h1>Sort, fix and play your RimWorld mods, with every move explained</h1>
-      <p class="lead">RimDeck is a fast load order manager for RimWorld 1.4 to 1.7. It scans hundreds of mods in a blink, tells you exactly why each mod goes where it goes, finds problems before the game does, and starts you straight back into your colony.</p>
+      <p class="lead">RimDeck is a fast load order manager for RimWorld 1.6 and the 1.7 alpha, on Windows, macOS and Linux. It scans hundreds of mods in a blink, tells you exactly why each mod goes where it goes, finds problems before the game does, and starts you straight back into your colony.</p>
       <div class="cta">
         <a class="btn" id="download" href="https://github.com/Sandiozo/RimDeck/releases/latest">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-          <span>Download for Windows</span>
+          <span id="download-label">Download</span>
         </a>
         <a class="btn ghost" href="https://github.com/Sandiozo/RimDeck">View on GitHub</a>
       </div>
-      <div class="meta" id="release">Windows 10 and 11 · installer with automatic updates · MIT license</div>
+      <div class="meta" id="release">Windows, macOS and Linux · MIT license</div>
+      <div class="meta" id="other-downloads"></div>
       <a class="zoom shot" href="hero.jpg" data-caption="RimDeck: load order, mod details and the research tree"><img src="hero.jpg" alt="RimDeck showing an active load order, mod details and the research tree" width="1600" height="860"></a>
     </div>
 
@@ -209,6 +210,7 @@
         <div class="card"><h3>Research tree and items</h3><p>Every mod's research on one zoomable tree, sorted by era if you like, and items that exist more than once.</p></div>
         <div class="card"><h3>Game log and crash finder</h3><p>Errors grouped and pinned to the mods most likely responsible, plus a binary search that finds a broken mod in a few launches.</p></div>
         <div class="card"><h3>Workshop and profiles</h3><p>Download mods and whole collections through SteamCMD with update checks, and keep separate profiles per game version.</p></div>
+        <div class="card"><h3>Windows, macOS and Linux</h3><p>The same RimDeck on every system, finding RimWorld and your mods through Steam, Flatpak Steam or RimSort, for RimWorld 1.6 and the 1.7 alpha.</p></div>
         <div class="card"><h3>Safe by design</h3><p>RimDeck writes only ModsConfig.xml and the settings you edit, and backs them up first. Mod code is read, never run.</p></div>
       </div>
     </section>
@@ -233,9 +235,9 @@
     <section id="install">
       <h2>Install</h2>
       <ol class="steps">
-        <li><span>Download <b>RimDeck-Setup.exe</b> from the <a href="https://github.com/Sandiozo/RimDeck/releases/latest">latest release</a> and run it.</span></li>
+        <li><span>Download the file for your system from the <a href="https://github.com/Sandiozo/RimDeck/releases/latest">latest release</a>: the <b>Setup .exe</b> on Windows, the <b>.dmg</b> on macOS, the <b>.AppImage</b> or <b>.deb</b> on Linux.</span></li>
         <li><span>On first start, RimDeck finds RimWorld through Steam, or imports your RimSort folders and rules.</span></li>
-        <li><span>That's it. RimDeck <b>updates itself</b> when a new version comes out.</span></li>
+        <li><span>That's it. RimDeck <b>updates itself</b> on Windows and from the Linux AppImage, and tells you about new versions on macOS.</span></li>
       </ol>
     </section>
 
@@ -298,15 +300,43 @@
       else if (e.key === 'ArrowRight') show(at + 1)
     })
 
-    // Link straight to the newest installer and show its version; the release page is the fallback.
+    // Link straight to the newest download for the visitor's system and show its version;
+    // the release page is the fallback.
+    const ua = navigator.userAgent
+    const os = /Mac/.test(navigator.platform || ua) ? 'mac' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : 'windows'
+    const files = {
+      windows: { label: 'Download for Windows', match: /\.exe$/i },
+      mac: { label: 'Download for macOS', match: /mac-arm64\.dmg$/i },
+      linux: { label: 'Download for Linux', match: /\.AppImage$/i },
+    }
+    document.getElementById('download-label').textContent = files[os].label
     fetch('https://api.github.com/repos/Sandiozo/RimDeck/releases/latest')
       .then((r) => (r.ok ? r.json() : null))
       .then((rel) => {
         if (!rel) return
-        const exe = (rel.assets || []).find((a) => /\.exe$/i.test(a.name))
-        if (exe) document.getElementById('download').href = exe.browser_download_url
+        const assets = rel.assets || []
+        const find = (re) => assets.find((a) => re.test(a.name))
+        const mine = find(files[os].match)
+        if (mine) document.getElementById('download').href = mine.browser_download_url
         const date = new Date(rel.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-        document.getElementById('release').textContent = `Version ${rel.tag_name.replace(/^v/, '')} · released ${date} · Windows 10 and 11 · updates itself · MIT license`
+        document.getElementById('release').textContent = `Version ${rel.tag_name.replace(/^v/, '')} · released ${date} · MIT license`
+        // The other systems' files, for anyone downloading for another computer.
+        const others = [
+          ['Windows', /\.exe$/i],
+          ['macOS Apple Silicon', /mac-arm64\.dmg$/i],
+          ['macOS Intel', /mac-x64\.dmg$/i],
+          ['Linux AppImage', /\.AppImage$/i],
+          ['Linux .deb', /\.deb$/i],
+        ].map(([name, re]) => [name, find(re)]).filter(([, a]) => a)
+        const box = document.getElementById('other-downloads')
+        box.textContent = 'Also: '
+        others.forEach(([name, a], i) => {
+          const link = document.createElement('a')
+          link.href = a.browser_download_url
+          link.textContent = name
+          box.append(link, i < others.length - 1 ? ' · ' : '')
+        })
+        if (!others.length) box.textContent = ''
       })
       .catch(() => {})
   </script>
