@@ -411,12 +411,32 @@ export interface SettingsFile {
   exists?: boolean
 }
 
+export interface SettingElem {
+  type: 'bool' | 'int' | 'float' | 'string' | 'enum' | 'def' | 'other'
+  options?: string[]
+}
+
 export interface SettingSchema {
+  /** The element name in the settings file. */
   label: string
-  type: 'bool' | 'int' | 'float' | 'string' | 'enum'
+  type: 'bool' | 'int' | 'float' | 'string' | 'enum' | 'color' | 'intRange' | 'floatRange' | 'vector' | 'list' | 'dict' | 'group'
   /** The default as RimWorld writes it; null when the default is null. */
   def: string | null
+  /** The default could not be read from the code. */
+  defUnknown?: boolean
   options?: string[]
+  /** List items, or dictionary values. */
+  elem?: SettingElem
+  /** Dictionary keys. */
+  key?: SettingElem
+  /** Settings inside a nested object or node. */
+  children?: SettingSchema[]
+  /** Label and tooltip from the mod's settings window. */
+  title?: string
+  tip?: string
+  /** Slider limits from the mod's settings window. */
+  min?: number
+  max?: number
 }
 
 /** Settings a mod declares in code, read from its DLL. */

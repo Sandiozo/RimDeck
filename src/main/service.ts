@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { watch, type FSWatcher } from 'node:fs'
-import { copyFile, cp, mkdir, open, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative } from 'node:path'
 import type {
   Profile,
@@ -13,6 +13,7 @@ import type {
   SettingsFile,
   SettingsNode,
   SettingsSchema,
+  SettingSchema,
   TextureReport,
   XmlReport,
   XmlSearchResult,
@@ -669,7 +670,9 @@ export class Service {
       cls = info.mods.find((x) => x.modClass.toLowerCase() === modClass)?.settingsClass
     }
     const entries = cls ? info.schemas[cls] : undefined
-    return cls && entries ? { settingsClass: cls, entries } : null
+    if (!cls || !entries) return null
+    const keyed = await readKeyed(m)
+    return { settingsClass: cls, entries: entries.map((e) => translateSchema(e, keyed)) }
   }
 
   async readModSettings(path: string): Promise<SettingsNode> {
@@ -1041,3 +1044,74 @@ export type ServiceMethod = Exclude<
   | 'dataDir' | 'emit' | 'settings' | 'user' | 'mods' | 'config' | 'gameVersion' | 'scanMs' | 'pathProblems' | 'lastWrite' | 'rules' | 'asmCache' | 'watchers' | 'rescanTimer' | 'gameRunning' | 'xmlCache' | 'defCache' | 'saving'
   | 'steamcmd' | 'downloads' | 'downloadRecords' | 'details' | 'updateReport'
 >
+
+// The mod's English translations (Languages/English/Keyed), used for labels in its settings window.
+const keyedCache = new Map<string, { mtime: number; map: Map<string, string> }>()
+
+async function readKeyed(m: ModInfo): Promise<Map<string, string>> {
+  const hit = keyedCache.get(m.path)
+  if (hit && hit.mtime === m.mtime) return hit.map
+  const map = new Map<string, string>()
+  const files: string[] = []
+  const collect = async (dir: string, depth: number) => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && depth < 3) await collect(join(dir, e.name), depth + 1)
+      else if (e.isFile() && e.name.toLowerCase().endsWith('.xml')) files.push(join(dir, e.name))
+    }
+  }
+  for (const d of new Set(['', ...m.contentDirs])) await collect(join(m.path, d, 'Languages', 'English', 'Keyed'), 0)
+  for (const f of files) {
+    try {
+      const xml = await readFile(f, 'utf8')
+      for (const [, key, text] of xml.matchAll(/<(?!LanguageData>)([A-Za-z_][\w.\-]*)>([\s\S]*?)<\/\1>/g)) {
+        if (!map.has(key)) map.set(key, decodeXmlText(text))
+      }
+    } catch {
+      // unreadable file
+    }
+  }
+  keyedCache.set(m.path, { mtime: m.mtime, map })
+  return map
+}
+
+function decodeXmlText(s: string): string {
+  return s
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\\n/g, '\n')
+}
+
+// Settings windows show translated text; keys without a translation are not shown.
+function uiText(raw: string | undefined, keyed: Map<string, string>, title: boolean): string | undefined {
+  if (!raw) return undefined
+  let text = keyed.get(raw)
+  if (text === undefined) {
+    // Untranslated text is shown only when it reads like words, not like a key.
+    if (!/\s/.test(raw) && !/^[A-Z][a-z]+$/.test(raw)) return undefined
+    text = raw
+  }
+  text = text.replace(/<\/?(color|b|i|size)[^>]*>/gi, '').trim()
+  // "Bleeding rate: {0:P0}/day" → "Bleeding rate"
+  if (title) text = text.split(/\s*[:：]?\s*\{\d/)[0].replace(/[\s:：]+$/, '')
+  else text = text.replace(/\{\d[^}]*\}/g, '…')
+  return /\p{L}/u.test(text) ? text : undefined
+}
+
+function translateSchema(e: SettingSchema, keyed: Map<string, string>): SettingSchema {
+  const out: SettingSchema = { ...e, title: uiText(e.title, keyed, true), tip: uiText(e.tip, keyed, false) }
+  // A long "label" is an explanation drawn above the control; keep it as the tooltip.
+  if (out.title && out.title.length > 70) {
+    out.tip ??= out.title
+    delete out.title
+  }
+  if (!out.title) delete out.title
+  if (!out.tip || out.tip === out.title) delete out.tip
+  if (e.children) out.children = e.children.map((c) => translateSchema(c, keyed))
+  return out
+}
