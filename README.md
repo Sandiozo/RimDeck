@@ -1,22 +1,47 @@
-<p align="center">
-  <img src="docs/banner.png" alt="RimDeck — a fast, modern mod manager for RimWorld 1.7" width="100%">
-</p>
+<div align="center">
 
-<p align="center">
-  <a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sandiozo/RimDeck?style=flat-square&color=7c8cff"></a>
-  <a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=b58cff"></a>
-  <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-3ecf8e?style=flat-square">
-  <img alt="RimWorld 1.7" src="https://img.shields.io/badge/RimWorld-1.7-f5b544?style=flat-square">
-  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-9aa3b2?style=flat-square"></a>
-</p>
+<img src="resources/icon-256.png" width="104" alt="RimDeck logo">
 
-**RimDeck** loads a 350-mod list in about a quarter of a second, sorts it with explanations, catches problems before you launch, and shows what your mods actually do to textures, research and items.
+# RimDeck
 
-## Download
+### The fast, modern mod manager for RimWorld 1.7
 
-Grab **`RimDeck-Setup-x.y.z.exe`** from the [latest release](https://github.com/Sandiozo/RimDeck/releases/latest) and run it. RimDeck finds RimWorld through Steam (or your RimSort settings) on first start, and **updates itself** when a new version is released.
+Explained auto-sort · live problem checks · texture & research insight · one-click Workshop downloads
 
-> The installer isn't code-signed yet, so Windows SmartScreen may warn you: click **More info → Run anyway**.
+<br>
+
+<a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-7c8cff?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEyIDN2MTIiLz48cGF0aCBkPSJtNyAxMCA1IDUgNS01Ii8+PHBhdGggZD0iTTUgMjFoMTQiLz48L3N2Zz4="></a>
+
+<br><br>
+
+<a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sandiozo/RimDeck?style=flat-square&label=release&color=7c8cff"></a>
+<a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=b58cff"></a>
+<img alt="RimWorld 1.7" src="https://img.shields.io/badge/RimWorld-1.7-f5b544?style=flat-square">
+<img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-3ecf8e?style=flat-square">
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Sandiozo/RimDeck?style=flat-square&color=9aa3b2"></a>
+
+<sub><a href="#install">Install</a> &nbsp;•&nbsp; <a href="#screenshots">Screenshots</a> &nbsp;•&nbsp; <a href="#what-it-does">Features</a> &nbsp;•&nbsp; <a href="docs/FEATURES.md">Full reference</a> &nbsp;•&nbsp; <a href="#build-from-source">Build</a></sub>
+
+<br><br>
+
+<img src="docs/hero.png" alt="RimDeck showing an active load order, mod details and the research tree" width="100%">
+
+</div>
+
+<br>
+
+| ⚡ Fast | 🧭 Sorted, with reasons | 🛡️ Safe |
+|:--|:--|:--|
+| Scans 350+ mods in about a quarter of a second, with no loading screens or refresh buttons. | Every move in the auto-sort comes with the rule behind it, and nothing changes until you apply it. | Only `ModsConfig.xml` and settings you edit are written, always backed up first. Mod code is read, never run. |
+
+## Install
+
+1. Download **`RimDeck-Setup-x.y.z.exe`** from the [latest release](https://github.com/Sandiozo/RimDeck/releases/latest) and run it.
+2. RimDeck finds RimWorld through Steam, or picks up your RimSort folders and rules, on first start.
+3. That's it: RimDeck **updates itself** whenever a new version is released.
+
+> [!NOTE]
+> The installer isn't code-signed yet, so Windows SmartScreen may warn you. Click **More info → Run anyway**.
 
 ## Screenshots
 
@@ -42,7 +67,7 @@ Grab **`RimDeck-Setup-x.y.z.exe`** from the [latest release](https://github.com/
 - **Saves, lists & installs** — see which mods a save used, keep named lists, switch between several RimWorld installs.
 - **Find a broken mod** — a binary search that halves the suspects on each launch.
 
-RimDeck only writes `ModsConfig.xml` (backing it up first) and the settings files you edit. Mod DLLs are read, never run. The full feature reference is in [docs/FEATURES.md](docs/FEATURES.md).
+Every feature in detail: [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Build from source
 
