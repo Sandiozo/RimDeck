@@ -12,7 +12,7 @@ Explained auto-sort · live problem checks · texture & research insight · one-
 
 <a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-7c8cff?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEyIDN2MTIiLz48cGF0aCBkPSJtNyAxMCA1IDUgNS01Ii8+PHBhdGggZD0iTTUgMjFoMTQiLz48L3N2Zz4="></a>
 
-<br><br>
+<br>
 
 <a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sandiozo/RimDeck?style=flat-square&label=release&color=7c8cff"></a>
 <a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=b58cff"></a>
