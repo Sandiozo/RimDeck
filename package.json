@@ -1,7 +1,7 @@
 {
   "name": "rimdeck",
   "productName": "RimDeck",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A fast, modern mod manager for RimWorld",
   "main": "out/main/index.js",
   "type": "module",
@@ -33,13 +33,14 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "RimDeck",
       "artifactName": "RimDeck-Setup-${version}.exe",
-      "uninstallDisplayName": "RimDeck"
+      "uninstallDisplayName": "RimDeck",
+      "include": "build/installer.nsh"
     },
     "publish": [
       {
