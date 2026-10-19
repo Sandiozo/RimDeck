@@ -46,6 +46,23 @@ jobs:
           # No Apple Developer certificate: the app is ad-hoc signed (see package.json).
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      # Starts the packaged app and asks its debug connection for its state; fails if it doesn't start.
+      - name: Smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+            app=$(ls release/*.AppImage | head -1); chmod +x "$app"
+            APPIMAGE_EXTRACT_AND_RUN=1 RD_BRIDGE=1 xvfb-run -a "$app" --no-sandbox > app.log 2>&1 &
+          else
+            RD_BRIDGE=1 release/mac-arm64/RimDeck.app/Contents/MacOS/RimDeck > app.log 2>&1 &
+          fi
+          for i in $(seq 1 45); do
+            if curl -sf -X POST -d '[]' http://127.0.0.1:5199/api/getState -o state.json; then break; fi
+            sleep 2
+          done
+          node -e "const s=require('./state.json'); if (!s.ok) { console.error(s.error); process.exit(1) } console.log('RimDeck started; platform paths:', JSON.stringify(s.result.settings.paths))" || { cat app.log; exit 1; }
+
       # Kept for a week either way, so a test run (started by hand with a branch name) can be tried out.
       - uses: actions/upload-artifact@v4
         with:
