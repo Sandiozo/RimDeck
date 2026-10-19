@@ -76,7 +76,7 @@
       -webkit-font-smoothing: antialiased;
     }
     a { color: var(--accent-text); }
-    img { max-width: 100%; display: block; }
+    img { max-width: 100%; height: auto; display: block; }
     .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
 
     header.top { display: flex; align-items: center; gap: 12px; padding: 18px 0; }
@@ -116,6 +116,7 @@
     .meta { font-size: 13px; color: var(--text-3); }
 
     .shot { margin: 34px auto 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2); box-shadow: var(--shadow); }
+    .shot img { width: 100%; }
 
     section { padding: 64px 0 8px; }
     h2 { font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-2); margin: 0 0 22px; }
@@ -128,6 +129,31 @@
     .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
     .gallery figure { margin: 0; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .gallery figcaption { padding: 10px 14px; font-size: 13.5px; color: var(--text-2); }
+    a.zoom { display: block; cursor: zoom-in; position: relative; }
+    a.zoom img { transition: transform 0.25s, filter 0.25s; }
+    .gallery a.zoom { overflow: hidden; }
+    a.zoom:hover img { filter: brightness(1.06); }
+    .gallery a.zoom:hover img { transform: scale(1.02); }
+    a.zoom:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Full-size viewer */
+    .viewer { position: fixed; inset: 0; z-index: 50; display: none; background: rgb(8 9 11 / 0.92); backdrop-filter: blur(4px); }
+    .viewer.open { display: grid; grid-template-rows: 1fr auto; }
+    .viewer .stage { min-height: 0; display: grid; place-items: center; padding: 56px 72px 12px; }
+    .viewer .stage img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 8px; border: 1px solid #3d454c; box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.8); cursor: zoom-out; }
+    .viewer .bar { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 12px 16px 20px; color: #ece6da; font-size: 14px; }
+    .viewer .bar span { color: #b3ada2; min-width: 4ch; text-align: center; }
+    .viewer button { all: unset; cursor: pointer; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 6px; color: #ece6da; background: rgb(255 255 255 / 0.06); border: 1px solid #3d454c; }
+    .viewer button:hover { background: rgb(255 255 255 / 0.12); }
+    .viewer button:focus-visible { outline: 2px solid var(--accent); }
+    .viewer .close { position: absolute; top: 12px; right: 12px; }
+    .viewer .prev, .viewer .next { position: absolute; top: 50%; transform: translateY(-50%); }
+    .viewer .prev { left: 14px; }
+    .viewer .next { right: 14px; }
+    @media (max-width: 640px) {
+      .viewer .stage { padding: 56px 8px 8px; }
+      .viewer .prev, .viewer .next { top: auto; bottom: 14px; transform: none; }
+    }
 
     ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
     ol.steps li { counter-increment: s; display: flex; gap: 14px; align-items: baseline; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; color: var(--text-2); }
@@ -169,7 +195,7 @@
         <a class="btn ghost" href="https://github.com/Sandiozo/RimDeck">View on GitHub</a>
       </div>
       <div class="meta" id="release">Windows 10 and 11 · installer with automatic updates · MIT license</div>
-      <img class="shot" src="hero.jpg" alt="RimDeck showing an active load order, mod details and the research tree" width="1600" height="860">
+      <a class="zoom shot" href="hero.jpg" data-caption="RimDeck: load order, mod details and the research tree"><img src="hero.jpg" alt="RimDeck showing an active load order, mod details and the research tree" width="1600" height="860"></a>
     </div>
 
     <section id="features">
@@ -190,12 +216,12 @@
     <section id="screenshots">
       <h2>Screenshots</h2>
       <div class="gallery">
-        <figure><img src="screenshots/mods.png" alt="Load order with problem badges" loading="lazy"><figcaption>Load order with live problem badges</figcaption></figure>
-        <figure><img src="screenshots/sort.png" alt="Auto-sort preview with reasons" loading="lazy"><figcaption>Auto-sort, with the rule behind every move</figcaption></figure>
-        <figure><img src="screenshots/textures.png" alt="Texture conflict viewer" loading="lazy"><figcaption>Texture conflicts, side by side</figcaption></figure>
-        <figure><img src="screenshots/research.png" alt="Research tree across all mods" loading="lazy"><figcaption>Research tree across all mods</figcaption></figure>
-        <figure><img src="screenshots/problems.png" alt="Problems page" loading="lazy"><figcaption>Problems, with one-click fixes</figcaption></figure>
-        <figure><img src="screenshots/loadtime.png" alt="Load time report" loading="lazy"><figcaption>What makes the game load slowly</figcaption></figure>
+        <figure><a class="zoom" href="screenshots/mods.png" data-caption="Load order with live problem badges"><img src="screenshots/mods.png" alt="Load order with problem badges" loading="lazy" width="1480" height="920"></a><figcaption>Load order with live problem badges</figcaption></figure>
+        <figure><a class="zoom" href="screenshots/sort.png" data-caption="Auto-sort, with the rule behind every move"><img src="screenshots/sort.png" alt="Auto-sort preview with reasons" loading="lazy" width="1480" height="920"></a><figcaption>Auto-sort, with the rule behind every move</figcaption></figure>
+        <figure><a class="zoom" href="screenshots/textures.png" data-caption="Texture conflicts, side by side"><img src="screenshots/textures.png" alt="Texture conflict viewer" loading="lazy" width="1480" height="920"></a><figcaption>Texture conflicts, side by side</figcaption></figure>
+        <figure><a class="zoom" href="screenshots/research.png" data-caption="Research tree across all mods"><img src="screenshots/research.png" alt="Research tree across all mods" loading="lazy" width="1480" height="920"></a><figcaption>Research tree across all mods</figcaption></figure>
+        <figure><a class="zoom" href="screenshots/problems.png" data-caption="Problems, with one-click fixes"><img src="screenshots/problems.png" alt="Problems page" loading="lazy" width="1480" height="920"></a><figcaption>Problems, with one-click fixes</figcaption></figure>
+        <figure><a class="zoom" href="screenshots/loadtime.png" data-caption="What makes the game load slowly"><img src="screenshots/loadtime.png" alt="Load time report" loading="lazy" width="1480" height="920"></a><figcaption>What makes the game load slowly</figcaption></figure>
       </div>
     </section>
 
@@ -214,7 +240,59 @@
     </footer>
   </div>
 
+  <div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+    <div class="stage"><img id="viewer-img" alt=""></div>
+    <div class="bar"><span id="viewer-caption"></span><span id="viewer-count"></span></div>
+    <button class="close" id="viewer-close" aria-label="Close">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <button class="prev" id="viewer-prev" aria-label="Previous screenshot">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+    </button>
+    <button class="next" id="viewer-next" aria-label="Next screenshot">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+    </button>
+  </div>
+
   <script>
+    // Screenshots open full size; arrows or the arrow keys step through them, Esc or a click outside closes.
+    const shots = [...document.querySelectorAll('a.zoom')]
+    const viewer = document.getElementById('viewer')
+    const img = document.getElementById('viewer-img')
+    let at = 0
+    let opener = null
+    const show = (i) => {
+      at = (i + shots.length) % shots.length
+      const a = shots[at]
+      img.src = a.getAttribute('href')
+      img.alt = a.querySelector('img').alt
+      document.getElementById('viewer-caption').textContent = a.dataset.caption || ''
+      document.getElementById('viewer-count').textContent = `${at + 1} / ${shots.length}`
+    }
+    const open = (i) => {
+      opener = document.activeElement
+      show(i)
+      viewer.classList.add('open')
+      document.body.style.overflow = 'hidden'
+      document.getElementById('viewer-close').focus()
+    }
+    const close = () => {
+      viewer.classList.remove('open')
+      document.body.style.overflow = ''
+      opener?.focus()
+    }
+    shots.forEach((a, i) => a.addEventListener('click', (e) => { e.preventDefault(); open(i) }))
+    document.getElementById('viewer-close').addEventListener('click', close)
+    document.getElementById('viewer-prev').addEventListener('click', () => show(at - 1))
+    document.getElementById('viewer-next').addEventListener('click', () => show(at + 1))
+    viewer.addEventListener('click', (e) => { if (e.target === viewer || e.target.classList.contains('stage') || e.target === img) close() })
+    document.addEventListener('keydown', (e) => {
+      if (!viewer.classList.contains('open')) return
+      if (e.key === 'Escape') close()
+      else if (e.key === 'ArrowLeft') show(at - 1)
+      else if (e.key === 'ArrowRight') show(at + 1)
+    })
+
     // Link straight to the newest installer and show its version; the release page is the fallback.
     fetch('https://api.github.com/repos/Sandiozo/RimDeck/releases/latest')
       .then((r) => (r.ok ? r.json() : null))
