@@ -104,6 +104,8 @@ export class Service {
   scanMs = 0
   pathProblems: string[] = []
   lastWrite = 0
+  // The watcher can fire before a save has finished; it waits for this so RimDeck's own writes never look external.
+  configWrite: Promise<unknown> = Promise.resolve()
   rules: RulesBundle | null = null
   asmCache = new Map<string, { mtime: number; info: AssemblyInfo | null }>()
   watchers: FSWatcher[] = []
@@ -300,12 +302,16 @@ export class Service {
     if (!dir) throw new Error('Config folder is not set')
     const known = new Set(this.config?.knownExpansions ?? [])
     for (const m of this.mods) if (m.source === 'dlc') known.add(m.packageId)
-    const { backup, mtime } = await writeModsConfig(dir, this.instFile('backups'), {
+    const write = writeModsConfig(dir, this.instFile('backups'), {
       version: this.config?.version || this.gameVersion,
       activeMods,
       knownExpansions: OFFICIAL_ORDER.filter((id) => known.has(id) && id !== 'ludeon.rimworld'),
+    }).then((r) => {
+      this.lastWrite = r.mtime
+      return r
     })
-    this.lastWrite = mtime
+    this.configWrite = write.catch(() => {})
+    const { backup } = await write
     this.config = await readModsConfig(dir)
     const profile = this.currentProfile()
     if (profile && profile.installId === this.settings.currentInstall) {
@@ -1053,6 +1059,7 @@ export class Service {
           watch(p.configDir, async (_ev, name) => {
             if (String(name).toLowerCase() !== 'modsconfig.xml') return
             try {
+              await this.configWrite
               const st = await stat(join(p.configDir, 'ModsConfig.xml'))
               if (Math.abs(st.mtimeMs - this.lastWrite) < 5 || st.mtimeMs === this.config?.mtime) return
               this.emit({ type: 'config-changed', external: true })
