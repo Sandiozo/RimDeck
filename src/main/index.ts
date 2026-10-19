@@ -57,6 +57,7 @@ const API = [
   'texturePicks',
   'defData',
   'listInstalls',
+  'switchProfile',
   'trashMods',
   'unsubscribeMods',
   'switchInstall',

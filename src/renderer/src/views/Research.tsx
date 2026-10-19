@@ -233,7 +233,7 @@ export function ResearchView() {
             {data
               ? `${nodes.size} projects from ${new Set([...nodes.values()].map((n) => n.packageId)).size} mods, positions after XML patches (${data.research.ms} ms).`
               : 'Reading research from every active mod…'}{' '}
-            Mods that rearrange the tree in code at runtime aren’t reflected.
+            Changes that mods make to the tree in code at runtime are not shown.
           </p>
         </div>
         <button className="btn" disabled={busy} onClick={() => loadDefs(s.active)}>
@@ -243,7 +243,7 @@ export function ResearchView() {
       {stale && (
         <div className="banner" style={{ margin: '12px 26px 0' }}>
           <TriangleAlert size={15} color="var(--warn)" />
-          <span className="grow">Your load order changed since this was read.</span>
+          <span className="grow">Your load order has changed since this data was read.</span>
           <button className="btn sm" onClick={() => loadDefs(s.active)}>
             Refresh
           </button>
@@ -351,7 +351,7 @@ export function ResearchView() {
                   style={{ left: at(n).left, top: at(n).top, width: W, height: H, borderColor: TECH_COLOR[n.techLevel] ?? 'var(--line-3)' }}
                   onClick={() => setSelected(selected === n.defName ? null : n.defName)}
                   title={`${n.label} — ${name(n.packageId)}` + (at(n).moved ? `
-Shown lower so it isn't hidden; in game it sits at ${n.x.toFixed(2)}, ${n.y.toFixed(2)}` : '')}
+Shown lower so that it is not hidden. In game it is at ${n.x.toFixed(2)}, ${n.y.toFixed(2)}.` : '')}
                 >
                   <span className="rstripe" style={{ background: modColor(n.packageId) }} />
                   <span className="rlabel">{n.label}</span>
@@ -393,7 +393,7 @@ Shown lower so it isn't hidden; in game it sits at ${n.x.toFixed(2)}, ${n.y.toFi
               {issues.overlaps.has(sel.defName) && (
                 <div className="issue-card error" style={{ marginTop: 10 }}>
                   <div className="t">Overlaps {issues.overlaps.get(sel.defName)!.map((d) => nodes.get(d)?.label ?? d).join(', ')}</div>
-                  <div className="d">They sit at the same spot in game, so one hides the other in the research screen. RimDeck draws them apart (marked ↓) so you can see both.</div>
+                  <div className="d">They occupy the same position in game, so one hides the other on the research screen. RimDeck draws them apart (marked ↓) so both are visible.</div>
                 </div>
               )}
               {[
@@ -454,7 +454,7 @@ Shown lower so it isn't hidden; in game it sits at ${n.x.toFixed(2)}, ${n.y.toFi
             <div className="details-body" style={{ marginTop: 0, paddingTop: 14, overflow: 'auto' }}>
               <h2 style={{ fontSize: 16 }}>Tree problems</h2>
               <p className="dim" style={{ marginTop: 4, fontSize: 12 }}>
-                {issueCount ? 'Click one to jump to it.' : 'No overlaps, missing prerequisites or loops.'}
+                {issueCount ? 'Select one to go to it.' : 'No overlaps, missing prerequisites or loops.'}
               </p>
               {issues.missing.length > 0 && (
                 <div className="d-section">

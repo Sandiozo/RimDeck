@@ -52,7 +52,7 @@ export function CollectionPanel() {
 
   const load = async () => {
     const id = parseWorkshopIds(input)[0]
-    if (!id) return s.toast('error', 'Paste a collection link or id')
+    if (!id) return s.toast('error', 'Paste a collection link or ID')
     setLoading(true)
     await s.loadCollection(id)
     setLoading(false)
@@ -67,7 +67,7 @@ export function CollectionPanel() {
             ref={ref}
             className="input grow"
             value={input}
-            placeholder="Import a Workshop collection: paste its link or id…"
+            placeholder="Import a Workshop collection: paste its link or ID…"
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && load()}
           />
@@ -104,7 +104,7 @@ export function CollectionPanel() {
       {newSinceApply > 0 && (
         <div className="banner accent" style={{ borderRadius: 0 }}>
           <span className="grow">
-            {newSinceApply} {newSinceApply === 1 ? 'mod' : 'mods'} from this collection installed since you applied it.
+            {newSinceApply} {newSinceApply === 1 ? 'mod' : 'mods'} from this collection installed since it was applied.
           </span>
           <button className="btn sm" onClick={() => s.applyCollection()}>
             <RotateCw size={12} /> Apply again

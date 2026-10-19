@@ -2,9 +2,9 @@
 
 <img src="docs/banner.jpg" alt="RimDeck" width="100%">
 
-### The fast, modern mod manager for RimWorld 1.7
+### A fast mod manager for RimWorld 1.7
 
-Explained auto-sort · live problem checks · texture & research insight · one-click Workshop downloads
+Auto-sort with explanations · live problem checks · texture and research analysis · one-click Workshop downloads
 
 <br>
 
@@ -28,18 +28,18 @@ Explained auto-sort · live problem checks · texture & research insight · one-
 
 <br>
 
-| ⚡ Fast | 🧭 Sorted, with reasons | 🛡️ Safe |
+| Fast | Explained sorting | Safe |
 |:--|:--|:--|
-| Scans 350+ mods in about a quarter of a second, with no loading screens or refresh buttons. | Every move in the auto-sort comes with the rule behind it, and nothing changes until you apply it. | Only `ModsConfig.xml` and settings you edit are written, always backed up first. Mod code is read, never run. |
+| Scans 350+ mods in about a quarter of a second, without loading screens or refresh buttons. | Each auto-sort move shows the rule behind it. Nothing changes until you apply it. | RimDeck writes only `ModsConfig.xml` and the settings you edit, and backs them up first. Mod code is read, never run. |
 
 ## Install
 
 1. Download **`RimDeck-Setup-x.y.z.exe`** from the [latest release](https://github.com/Sandiozo/RimDeck/releases/latest) and run it.
-2. RimDeck finds RimWorld through Steam, or picks up your RimSort folders and rules, on first start.
-3. That's it: RimDeck **updates itself** whenever a new version is released.
+2. On first start, RimDeck finds RimWorld through Steam or imports your RimSort folders and rules.
+3. RimDeck **updates itself** when a new version is released.
 
 > [!NOTE]
-> The installer isn't code-signed yet, so Windows SmartScreen may warn you. Click **More info → Run anyway**.
+> The installer is not code-signed yet, so Windows SmartScreen may show a warning. Select **More info → Run anyway**.
 
 ## Screenshots
 
@@ -48,9 +48,9 @@ Explained auto-sort · live problem checks · texture & research insight · one-
 | ![Mods](docs/screenshots/mods.png) | ![Sort preview](docs/screenshots/sort.png) |
 | **Mods** — drag and drop, live problem badges, details and settings | **Auto-sort** — every move explained before anything changes |
 | ![Textures](docs/screenshots/textures.png) | ![Research](docs/screenshots/research.png) |
-| **Texture conflicts** — compare versions and pick per texture | **Research tree** — tidy, by era or in game positions, problems flagged |
+| **Texture conflicts** — compare versions and pick per texture | **Research tree** — tidy, by era or in game positions, with problems flagged |
 | ![Items](docs/screenshots/items.png) | ![Load time](docs/screenshots/loadtime.png) |
-| **Items** — duplicates that several mods add | **Load time** — measured startup phases and the heaviest mods |
+| **Items** — duplicate items added by several mods | **Load time** — measured startup phases and the heaviest mods |
 
 ## What it does
 
@@ -58,14 +58,15 @@ Explained auto-sort · live problem checks · texture & research insight · one-
 - **Auto-sort** — About.xml rules, dependencies, RimSort's community rules and rules inferred from XML overrides, with the reason for every move.
 - **Problem checks** — missing dependencies, broken load-order rules, incompatibilities, duplicates, outdated mods with updated replacements.
 - **Texture conflicts** — see which mod's texture wins, compare side by side, with a slider or as a pixel diff (DDS too), and pick single textures.
-- **Research tree & items** — every mod's research on one zoomable tree, and items that exist more than once.
+- **Research tree and items** — every mod's research on one zoomable tree, and items that exist more than once.
 - **Mod settings** — edit any mod's saved settings without starting the game.
 - **Game log** — groups errors and names the mods most likely responsible.
 - **Workshop** — download mods and whole collections through SteamCMD (optional Steam login), with update checks.
-- **Saves, lists & installs** — see which mods a save used, keep named lists, switch between several RimWorld installs.
+- **Profiles** — separate setups, each with its own game install (game version) and its own mods and load order; switch from the title bar.
+- **Saves** — see which mods a save used and load that list.
 - **Find a broken mod** — a binary search that halves the suspects on each launch.
 
-Every feature in detail: [docs/FEATURES.md](docs/FEATURES.md).
+Full feature reference: [docs/FEATURES.md](docs/FEATURES.md).
 
 ## Build from source
 

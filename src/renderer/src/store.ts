@@ -373,15 +373,15 @@ export const useStore = create<Store>((set, get) => {
     applySort() {
       const p = get().sortPreview
       if (p) commit(p.order, { sortPreview: null })
-      get().toast('ok', p?.moves.length ? `Sorted — ${p.moves.length} mods moved` : 'Already in order')
+      get().toast('ok', p?.moves.length ? `Load order sorted: ${p.moves.length} mods moved` : 'Load order is already sorted')
     },
     closeSort: () => set({ sortPreview: null }),
 
     async save() {
       const s = get()
       try {
-        const { config } = await api.saveModsConfig(s.active)
-        set({ saved: s.active, externalChange: false, app: s.app && { ...s.app, config } })
+        const { config, user } = await api.saveModsConfig(s.active)
+        set({ saved: s.active, externalChange: false, app: s.app && { ...s.app, config, user } })
         get().toast('ok', `Saved ${s.active.length} mods to ModsConfig.xml`)
       } catch (e: any) {
         get().toast('error', `Save failed: ${e.message}`)
@@ -469,7 +469,7 @@ export const useStore = create<Store>((set, get) => {
       const s = get()
       const keep = new Set([...OFFICIAL_ORDER, 'brrainz.harmony'])
       const suspects = s.active.filter((id) => !keep.has(baseId(id)) && s.activeMap.get(id)?.source !== 'dlc')
-      if (suspects.length < 2) return s.toast('info', 'Not enough mods to search through')
+      if (suspects.length < 2) return s.toast('info', 'Not enough active mods to search')
       const bisect: Bisect = { original: s.active, suspects, testing: [], step: 1 }
       set({ bisect })
       applyBisectStep()
@@ -517,7 +517,7 @@ export const useStore = create<Store>((set, get) => {
       // The service re-checks installed copies when a queue finishes; pick up its report.
       if (was && was !== 'idle' && downloads.phase === 'idle') {
         void get().checkUpdates()
-        if (get().collectionApplied) get().toast('info', 'Downloads finished — apply the collection again in Downloads to include them')
+        if (get().collectionApplied) get().toast('info', 'Downloads finished. Apply the collection again in Downloads to include the new mods.')
       }
     },
 
@@ -554,7 +554,7 @@ export const useStore = create<Store>((set, get) => {
       const ids = c.items.map((i) => byWorkshop.get(i.workshopId)).filter((id): id is string => !!id && !base.includes(id))
       commit([...base, ...withDeps(ids, base)])
       set({ collectionApplied: c.items.filter((i) => byWorkshop.has(i.workshopId)).map((i) => i.workshopId) })
-      get().toast('ok', `Loaded ${ids.length} mods from “${c.title}” — review the sort, then save`)
+      get().toast('ok', `Loaded ${ids.length} mods from “${c.title}”. Review the sort, then save.`)
       get().previewSort()
     },
 

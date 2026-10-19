@@ -91,8 +91,8 @@ export function TexturesView() {
     const orderIssues = (useStore.getState().issuesByPid.get(pid) ?? []).filter((i) => i.kind === 'order' || i.kind === 'dep-order').length
     s.toast(
       orderIssues ? 'error' : 'ok',
-      `Moved ${name(pid)} to #${useStore.getState().active.indexOf(pid) + 1} — ${flipped} texture${flipped === 1 ? '' : 's'} changed` +
-        (orderIssues ? `, but it now breaks ${orderIssues} load-order rule${orderIssues === 1 ? '' : 's'} (see Problems)` : ''),
+      `Moved ${name(pid)} to #${useStore.getState().active.indexOf(pid) + 1} (${flipped} texture${flipped === 1 ? '' : 's'} changed)` +
+        (orderIssues ? `. This breaks ${orderIssues} load-order rule${orderIssues === 1 ? '' : 's'}; see Problems.` : ''),
     )
   }
 
@@ -107,7 +107,7 @@ export function TexturesView() {
       else if (st.active[st.active.length - 1] !== PICKS) st.move([PICKS], st.active.length)
       await scan(useStore.getState().active)
       const dirty = useStore.getState().active.join('|') !== useStore.getState().saved.join('|')
-      s.toast('ok', `Using ${name(pid)}'s version of ${c.key.split('/').pop()}` + (dirty ? ' — save your load order to apply it' : ''))
+      s.toast('ok', `Using ${name(pid)}'s version of ${c.key.split('/').pop()}` + (dirty ? '. Save your load order to apply it.' : ''))
     } catch (err: any) {
       s.toast('error', err.message)
     }
@@ -115,7 +115,7 @@ export function TexturesView() {
   const unpick = async (c: Ordered) => {
     await api.unpickTexture(c.key)
     await scan(useStore.getState().active)
-    s.toast('ok', 'Pick removed')
+    s.toast('ok', 'Texture pick removed')
   }
 
   return (
@@ -136,7 +136,7 @@ export function TexturesView() {
       {stale && (
         <div className="banner" style={{ margin: '12px 26px 0' }}>
           <TriangleAlert size={15} color="var(--warn)" />
-          <span className="grow">Your active mods changed since this scan.</span>
+          <span className="grow">Your active mods have changed since this scan.</span>
           <button className="btn sm" onClick={() => scan(s.active)}>
             Rescan
           </button>
@@ -226,7 +226,7 @@ export function TexturesView() {
         </section>
 
         <section className="pane">
-          {current ? <Compare key={current.key} c={current} name={name} pos={pos} onWin={makeWin} onPick={pick} onUnpick={unpick} /> : <div className="empty">Pick a texture to compare.</div>}
+          {current ? <Compare key={current.key} c={current} name={name} pos={pos} onWin={makeWin} onPick={pick} onUnpick={unpick} /> : <div className="empty">Select a texture to compare.</div>}
         </section>
       </div>
     </div>
@@ -315,14 +315,14 @@ function Compare({
                         <FolderOpen size={12} />
                       </button>
                       {e.packageId === PICKS ? (
-                        <button className="btn sm" title="Delete the copied texture so load order decides again" onClick={() => onUnpick(c)}>
+                        <button className="btn sm" title="Delete the copied texture so the load order decides again" onClick={() => onUnpick(c)}>
                           <Undo2 size={12} /> Undo pick
                         </button>
                       ) : (
                         picked?.packageId !== e.packageId &&
                         (!isWinner || picked) && (
                           <>
-                            <button className="btn sm primary" title="Use this version of just this texture (copied into the RimDeck Texture Picks mod)" onClick={() => onPick(e.packageId, c)}>
+                            <button className="btn sm primary" title="Use this version for this texture only (copied into the RimDeck Texture Picks mod)" onClick={() => onPick(e.packageId, c)}>
                               <Check size={12} /> Use this one
                             </button>
                             {!isWinner && (

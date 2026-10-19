@@ -125,7 +125,7 @@ const ModRow = memo(function ModRow(p: RowProps) {
         {isNew && <span className="badge new" title="Added or updated in the last few days">new</span>}
         {m?.source === 'local' && <span className="badge local" title={`Local copy: ${m.path}`}>local</span>}
         {latest && (outdated || p.kind === 'inactive') && (
-          <span className={'ver' + (outdated ? '' : ' ok')} title={outdated ? `Not marked for ${p.gameMajor} — supports ${m!.supportedVersions.join(', ')}` : `Supports ${p.gameMajor}`}>
+          <span className={'ver' + (outdated ? '' : ' ok')} title={outdated ? `Not marked for ${p.gameMajor}. Supports ${m!.supportedVersions.join(', ')}.` : `Supports ${p.gameMajor}`}>
             {latest}
           </span>
         )}
@@ -347,7 +347,7 @@ export function ModList({ kind }: { kind: Kind }) {
             </div>
           )
         })}
-        {!rows.length && <div className="empty">{query ? 'Nothing matches this filter.' : kind === 'active' ? 'Drag mods here to activate them.' : 'Every installed mod is active.'}</div>}
+        {!rows.length && <div className="empty">{query ? 'No mods match this filter.' : kind === 'active' ? 'Drag mods here to activate them.' : 'All installed mods are active.'}</div>}
         {drop && kind === 'active' && <div className="drop-line" style={{ top: drop.top }} />}
       </div>
     </section>

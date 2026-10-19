@@ -95,7 +95,7 @@ export function ItemsView() {
       {stale && (
         <div className="banner" style={{ margin: '12px 26px 0' }}>
           <TriangleAlert size={15} color="var(--warn)" />
-          <span className="grow">Your load order changed since this was read.</span>
+          <span className="grow">Your load order has changed since this data was read.</span>
           <button className="btn sm" onClick={() => loadDefs(s.active)}>
             Refresh
           </button>
@@ -218,7 +218,7 @@ export function ItemsView() {
                 <h2 style={{ margin: '0 0 4px', fontSize: 17 }}>{current.label}</h2>
                 <p className="dim" style={{ margin: '0 0 12px', fontSize: 12.5 }}>
                   {current.note ??
-                    `${current.items.length} different items share this name. They are separate things in game, so you may get several versions in trade, crafting and storage filters.`}
+                    `${current.items.length} different items share this name. They are separate items in game, so several versions may appear in trade, crafting and storage filters.`}
                 </p>
                 <div className="tex-grid">
                   {current.items.map((i) => (

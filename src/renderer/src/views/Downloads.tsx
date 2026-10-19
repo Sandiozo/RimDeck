@@ -81,7 +81,7 @@ export function DownloadsView() {
 
   const submit = () => {
     const ids = parseWorkshopIds(input)
-    if (!ids.length) return s.toast('error', 'Paste a Workshop link or numeric id')
+    if (!ids.length) return s.toast('error', 'Paste a Workshop link or numeric ID')
     void s.download(ids)
     setInput('')
   }
@@ -92,7 +92,7 @@ export function DownloadsView() {
       <div className="page-head">
         <div className="grow">
           <h1>Downloads & updates</h1>
-          <p>Downloads Workshop mods with SteamCMD (anonymous, no Steam login) into your local mods folder, and checks installed mods for newer uploads.</p>
+          <p>Downloads Workshop mods with SteamCMD (anonymous by default) into your local mods folder, and checks installed mods for newer uploads.</p>
         </div>
         <button className="btn" disabled={s.checkingUpdates} onClick={() => s.checkUpdates(true)}>
           <RefreshCw size={14} className={s.checkingUpdates ? 'spin' : ''} /> Check for updates
@@ -107,7 +107,7 @@ export function DownloadsView() {
           <input
             className="input grow"
             value={input}
-            placeholder="Paste Workshop links or ids (several at once is fine)…"
+            placeholder="Paste one or more Workshop links or IDs…"
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
@@ -153,7 +153,7 @@ export function DownloadsView() {
         <div className="panel-head">
           <h3 className="grow">
             Queue
-            {active.length > 0 && <span className="dim" style={{ fontWeight: 400 }}> · {active.length} left{batchDone ? `, ${batchDone} installed` : ''}</span>}
+            {active.length > 0 && <span className="dim" style={{ fontWeight: 400 }}> · {active.length} remaining{batchDone ? `, ${batchDone} installed` : ''}</span>}
           </h3>
           {active.length > 0 && (
             <button className="btn sm" onClick={() => run(api.cancelDownloads())}>
@@ -189,7 +189,7 @@ export function DownloadsView() {
                       </div>
                       <div className="dim" style={{ fontSize: 11.5 }}>
                         {STATUS_LABEL[j.status]}
-                        {j.message ? ` — ${j.message}` : ''}
+                        {j.message ? `: ${j.message}` : ''}
                         {j.finishedAt && !busy(j) ? ` · ${timeAgo(j.finishedAt)}` : ''}
                       </div>
                       {j.status === 'downloading' && <div className="progress indeterminate" style={{ marginTop: 6 }}><span /></div>}
@@ -202,7 +202,7 @@ export function DownloadsView() {
                         </button>
                       )}
                       {j.status === 'failed' && j.needsLogin && (
-                        <button className="btn sm" title="Sign in with a Steam account that owns RimWorld" onClick={() => document.getElementById('steam-account')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+                        <button className="btn sm" title="Log in with a Steam account that owns RimWorld" onClick={() => document.getElementById('steam-account')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
                           <KeyRound size={11} /> Log in
                         </button>
                       )}
@@ -231,7 +231,7 @@ export function DownloadsView() {
             </tbody>
           </table>
         ) : (
-          <div className="empty">Nothing downloaded yet. Use “Download” on a missing dependency in Problems, a save in Saves, or paste a link above.</div>
+          <div className="empty">No downloads yet. Use “Download” on a missing dependency in Problems or a save in Saves, or paste a link above.</div>
         )}
         {(d?.log.length ?? 0) > 0 && (
           <details className="dl-log">
@@ -261,7 +261,7 @@ export function DownloadsView() {
         </div>
         {s.updates?.error && <div className="empty" style={{ color: 'var(--err)' }}>{s.updates.error}</div>}
         {!s.updates && <div className="empty">{s.checkingUpdates ? 'Checking the Workshop…' : 'Not checked yet.'}</div>}
-        {s.updates && !s.updates.error && !updates.length && !removed.length && <div className="empty">Every installed Workshop mod is up to date.</div>}
+        {s.updates && !s.updates.error && !updates.length && !removed.length && <div className="empty">All installed Workshop mods are up to date.</div>}
         {updates.length > 0 && (
           <table className="table">
             <tbody>

@@ -1,92 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { create } from 'zustand'
-import { Check, ChevronDown, FolderOpen, HardDrive, Pencil, Plus, Settings2, Trash } from 'lucide-react'
+import { FolderOpen, Pencil, Plus, Trash } from 'lucide-react'
 import type { InstallSummary } from '@shared/types'
-import { isDirty, useStore } from '../store'
+import { useStore } from '../store'
 import { api } from '../api'
-import { useDefs } from '../defStore'
 
 export const useInstalls = create<{ list: InstallSummary[] | null; load: () => Promise<void> }>((set) => ({
   list: null,
   load: async () => set({ list: await api.listInstalls() }),
 }))
-
-export async function switchInstall(id: string) {
-  const s = useStore.getState()
-  if (isDirty(s) && !confirm('You have unsaved load order changes. Switch install and discard them?')) return
-  try {
-    const app = await api.switchInstall(id)
-    const active = app.config?.activeMods ?? []
-    // Reuse the normal "paths changed" path so the whole UI reloads from the new install.
-    useStore.setState({ app, active, saved: active, past: [], future: [], selection: new Set(), focus: null })
-    s.setActive(active, false)
-    useDefs.setState({ data: null, scannedFor: '' })
-    void useStore.getState().refreshXml()
-    void useStore.getState().refreshChanges()
-    await useInstalls.getState().load()
-    const name = useInstalls.getState().list?.find((i) => i.id === id)?.name
-    useStore.getState().toast('ok', `Switched to ${name ?? 'install'} — ${app.mods.length} mods`)
-  } catch (e: any) {
-    useStore.getState().toast('error', e.message)
-  }
-}
-
-/** Title-bar chip: which RimWorld install RimDeck is managing, with a quick switch menu. */
-export function InstallSwitcher() {
-  const s = useStore()
-  const { list, load } = useInstalls()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    void load()
-  }, [s.app?.settings.currentInstall])
-  useEffect(() => {
-    if (!open) return
-    const close = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false)
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [open])
-  const current = list?.find((i) => i.current)
-  return (
-    <div ref={ref} className="no-drag" style={{ position: 'relative' }}>
-      <button className="btn ghost sm install-chip" onClick={() => setOpen(!open)} title="Switch RimWorld install">
-        <HardDrive size={12} />
-        <span className="ellipsis" style={{ maxWidth: 140 }}>{current?.name ?? 'Install'}</span>
-        <span className="dim mono" style={{ fontSize: 10.5 }}>{current?.version.match(/^\d+\.\d+/)?.[0] ?? ''}</span>
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className="menu" style={{ position: 'absolute', left: 0, top: 30, width: 320 }}>
-          {list?.map((i) => (
-            <button
-              key={i.id}
-              onClick={() => {
-                setOpen(false)
-                if (!i.current) void switchInstall(i.id)
-              }}
-            >
-              {i.current ? <Check size={14} color="var(--accent)" /> : <span style={{ width: 14 }} />}
-              <span className="grow" style={{ minWidth: 0 }}>
-                <span className="ellipsis" style={{ display: 'block', fontWeight: 560 }}>{i.name}</span>
-                <span className="ellipsis dim mono" style={{ display: 'block', fontSize: 10.5 }}>{i.paths.gameDir}</span>
-              </span>
-              <span className="dim mono" style={{ fontSize: 10.5 }}>{i.version.split(' ')[0] || '?'}</span>
-            </button>
-          ))}
-          <hr />
-          <button
-            onClick={() => {
-              setOpen(false)
-              s.setView('settings')
-            }}
-          >
-            <Settings2 size={14} /> Manage installs…
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** Settings panel: list, add, rename and remove installs. */
 export function InstallsPanel() {
@@ -117,7 +39,7 @@ export function InstallsPanel() {
       setName('')
       setGameDir('')
       setDataFolder('')
-      s.toast('ok', 'Install added — switch to it from the title bar')
+      s.toast('ok', 'Install added. Create or edit a profile to use it.')
     } catch (e: any) {
       s.toast('error', e.message)
     }
@@ -155,7 +77,7 @@ export function InstallsPanel() {
               </b>
             )}
             <span className="mono ellipsis" style={{ display: 'block' }}>
-              {i.version || 'version unknown'} · {i.paths.gameDir}
+              {i.version || 'Unknown version'} · {i.paths.gameDir}
             </span>
             {i.dataFolder && <span className="ellipsis" style={{ display: 'block' }}>Separate data: {i.dataFolder}</span>}
             {i.problems.length > 0 && <span style={{ color: 'var(--err)', display: 'block' }}>{i.problems[0]}</span>}
@@ -168,14 +90,11 @@ export function InstallsPanel() {
           </button>
           {!i.current && (
             <>
-              <button className="btn sm" onClick={() => switchInstall(i.id)}>
-                Switch
-              </button>
               <button
                 className="btn sm ghost danger icon"
                 title="Remove from RimDeck (nothing on disk is deleted)"
                 onClick={async () => {
-                  if (!confirm(`Remove “${i.name}” from RimDeck? Its files on disk are not touched.`)) return
+                  if (!confirm(`Remove “${i.name}” from RimDeck? Its files on disk are not affected.`)) return
                   try {
                     await api.removeInstall(i.id)
                     await load()

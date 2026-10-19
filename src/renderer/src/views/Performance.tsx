@@ -58,7 +58,7 @@ export function PerformanceView() {
         </button>
       </div>
 
-      {!report && <div className="panel"><div className="empty">Reading every active mod's textures, sounds, XML and code… (first run takes a few seconds)</div></div>}
+      {!report && <div className="panel"><div className="empty">Reading the textures, sounds, XML and code of every active mod… The first run takes a few seconds.</div></div>}
 
       {report && (
         <>
@@ -87,7 +87,7 @@ export function PerformanceView() {
             <div className="panel" style={{ marginBottom: 12 }}>
               <div className="panel-head">
                 <TriangleAlert size={15} color="var(--warn)" />
-                <h3>Worth a look</h3>
+                <h3>Possible slowdowns</h3>
               </div>
               <div className="panel-body col" style={{ gap: 6, fontSize: 12.5 }}>
                 {slow.slice(0, 6).map((m) => (

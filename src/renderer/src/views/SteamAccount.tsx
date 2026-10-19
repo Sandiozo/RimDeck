@@ -66,14 +66,14 @@ export function SteamAccountPanel() {
             ['account', account?.loggedIn ? account.user : 'Steam account'],
           ]}
           onChange={(v) => {
-            if (v === 'account' && !account?.loggedIn) return s.toast('info', 'Log in first')
+            if (v === 'account' && !account?.loggedIn) return s.toast('info', 'Log in to a Steam account first')
             run(api.steamUseAccount(v === 'account'))
           }}
         />
       </div>
       <div className="panel-body">
         <p className="dim" style={{ margin: '0 0 10px', fontSize: 12 }}>
-          Optional. Almost every mod downloads anonymously; a few need an account that owns RimWorld. Your password goes straight to SteamCMD and is never saved;
+          Optional. Most mods download anonymously; a few require an account that owns RimWorld. Your password is passed directly to SteamCMD and is never saved.
           SteamCMD keeps its own login session afterwards.
         </p>
 
@@ -112,7 +112,7 @@ export function SteamAccountPanel() {
                   onKeyDown={(e) => e.key === 'Enter' && submitPassword()}
                 />
                 <button className="btn primary" disabled={!password || busy} onClick={submitPassword}>
-                  <KeyRound size={13} /> Sign in
+                  <KeyRound size={13} /> Log in
                 </button>
                 <button className="btn ghost" onClick={cancel}>
                   Cancel

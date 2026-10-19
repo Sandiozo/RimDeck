@@ -54,14 +54,14 @@ export function ProblemsView() {
           <h1>Problems</h1>
           <p>Checked live against your current, unsaved load order.</p>
         </div>
-        <button className="btn" onClick={() => s.startBisect()} title="Turn half your mods off at a time to find which one breaks the game">
+        <button className="btn" onClick={() => s.startBisect()} title="Disable half of the suspect mods at a time to find the one causing a problem">
           <Bug size={14} /> Find a broken mod
         </button>
         <button className="btn" onClick={() => s.previewSort()}>
           <ArrowDownUp size={14} /> Sort
         </button>
         <button className="btn primary" disabled={!fixable} onClick={() => s.fixAll()}>
-          <WandSparkles size={14} /> Fix what's fixable
+          <WandSparkles size={14} /> Fix all fixable
         </button>
       </div>
 
@@ -104,8 +104,8 @@ export function ProblemsView() {
       {!groups.length && (
         <div className="panel">
           <div className="empty" style={{ padding: 50 }}>
-            <div style={{ fontSize: 15, color: 'var(--ok)', fontWeight: 600, marginBottom: 4 }}>All clear</div>
-            No problems in this load order.
+            <div style={{ fontSize: 15, color: 'var(--ok)', fontWeight: 600, marginBottom: 4 }}>No problems found</div>
+            The current load order passed all checks.
           </div>
         </div>
       )}

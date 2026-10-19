@@ -48,7 +48,7 @@ export function ChangesBanner({ onFilter }: { onFilter: (q: string) => void }) {
         </button>
         <button
           className="btn sm ghost icon"
-          title="Dismiss until next time you play"
+          title="Dismiss until the next game launch"
           onClick={() => {
             try {
               localStorage.setItem(dismissKey(c.since), '1')
@@ -109,8 +109,8 @@ function ChangesModal({ onClose }: { onClose: () => void }) {
           <div className="grow">
             <h2>Changes since you last played</h2>
             <p>
-              Last game start {new Date(c.since).toLocaleString()} ({c.source === 'rimdeck' ? 'launched from RimDeck' : 'from the game log'}). If something broke, start with the
-              updated active mods.
+              Last game start {new Date(c.since).toLocaleString()} ({c.source === 'rimdeck' ? 'launched from RimDeck' : 'from the game log'}). If a problem appears, check the
+              updated active mods first.
             </p>
           </div>
         </div>

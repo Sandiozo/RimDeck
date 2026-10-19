@@ -29,7 +29,7 @@ export function setupUpdater(send: (e: AppEvent) => void) {
 }
 
 export async function check(): Promise<UpdateState> {
-  if (!app.isPackaged) return { ...state, phase: 'error', error: 'Updates only work in the installed app' }
+  if (!app.isPackaged) return { ...state, phase: 'error', error: 'Updates are only available in the installed app' }
   try {
     await autoUpdater.checkForUpdates()
   } catch (e: any) {

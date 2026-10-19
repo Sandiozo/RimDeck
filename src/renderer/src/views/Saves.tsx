@@ -96,7 +96,7 @@ function SaveDetail({ save }: { save: SaveSummary }) {
   const adopt = () => {
     s.setActive(save.modIds.map((id) => resolveInstalled(id) ?? id))
     s.setView('mods')
-    s.toast('ok', `Loaded ${save.modIds.length} mods from “${save.name}” — review, then save`)
+    s.toast('ok', `Loaded ${save.modIds.length} mods from “${save.name}”. Review the list, then save.`)
   }
 
   // RimWorld can't be told which save to open, so this sets up the mods and the player picks the save in the menu.
@@ -104,7 +104,7 @@ function SaveDetail({ save }: { save: SaveSummary }) {
     if (missing.length && !confirm(`${missing.length} mod${missing.length === 1 ? '' : 's'} from this save ${missing.length === 1 ? 'is' : 'are'} not installed. Play anyway?`)) return
     s.setActive(save.modIds.map((id) => resolveInstalled(id) ?? id).filter((id) => s.installed.has(id)))
     await s.launch()
-    s.toast('info', `Load “${save.name}” from the main menu once the game is up`)
+    s.toast('info', `Load “${save.name}” from the main menu once the game has started.`)
   }
 
   const Section = ({ title, ids, tone }: { title: string; ids: string[]; tone: string }) =>

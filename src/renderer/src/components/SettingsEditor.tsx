@@ -53,7 +53,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
                 if (!confirm(`Reset ${f.className} to its defaults?\nThe current file is moved to RimDeck's backups.`)) return
                 try {
                   await api.resetModSettings(f.path)
-                  s.toast('ok', 'Settings reset — the game recreates defaults on next start')
+                  s.toast('ok', 'Settings reset. The game recreates the defaults on next start.')
                   void load()
                 } catch (e: any) {
                   s.toast('error', e.message)
@@ -165,7 +165,7 @@ export function SettingsEditor() {
     if (!root) return
     try {
       await api.writeModSettings(path, apply(root))
-      s.toast('ok', `Saved ${changed} change${changed === 1 ? '' : 's'} — a backup of the old file was kept`)
+      s.toast('ok', `Saved ${changed} change${changed === 1 ? '' : 's'}. The previous file was backed up.`)
       setRoot(apply(root))
       setEdits({})
       void reloadFiles()

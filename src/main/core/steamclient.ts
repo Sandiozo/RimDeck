@@ -58,10 +58,10 @@ export async function steamWorkshop(action: 'unsubscribe' | 'subscribe', ids: st
       try {
         // steam_api prints its own lines to stdout, so only the marked line is ours.
         const r = JSON.parse(out.match(/@@RIMDECK@@(.*)/)![1])
-        if (!r.ok) return resolve({ ok: false, done: [], failed: [], error: r.error === 'steam-not-running' ? 'Steam needs to be running and signed in.' : r.detail })
+        if (!r.ok) return resolve({ ok: false, done: [], failed: [], error: r.error === 'steam-not-running' ? 'Steam must be running and logged in.' : r.detail })
         resolve({ ok: true, done: r.done, failed: r.failed })
       } catch {
-        resolve({ ok: false, done: [], failed: [], error: (err || 'Steam helper did not answer').split('\n')[0] })
+        resolve({ ok: false, done: [], failed: [], error: (err || 'The Steam helper did not respond').split('\n')[0] })
       }
     })
   })

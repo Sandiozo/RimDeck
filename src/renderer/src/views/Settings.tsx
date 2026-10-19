@@ -143,7 +143,7 @@ export function SettingsView() {
         <div className="setting">
           <div className="label">
             <b>Check mods against</b>
-            <span>Version warnings, badges and the is:outdated filter use this. Handy when planning a list for an older or newer version.</span>
+            <span>Version warnings, badges and the is:outdated filter use this. Useful when planning a list for an older or newer version.</span>
           </div>
           <select className="input" value={st.targetVersion} onChange={(e) => s.updateSettings({ targetVersion: e.target.value })}>
             <option value="">Installed game ({s.app!.installedMajor})</option>
@@ -194,7 +194,7 @@ export function SettingsView() {
 
       <div className="panel">
         <div className="panel-head">
-          <h3>Appearance & data</h3>
+          <h3>Appearance and data</h3>
         </div>
         <div className="setting">
           <div className="label">
@@ -257,7 +257,7 @@ function OrphanSettings() {
       <div className="panel-head">
         <h3 className="grow">Mod settings files</h3>
         <span className="dim" style={{ fontSize: 12 }}>
-          {files.length} files · {orphans.length} from mods that aren't installed ({bytes(size)})
+          {files.length} files · {orphans.length} from mods that are not installed ({bytes(size)})
         </span>
       </div>
       <div className="setting">
@@ -314,8 +314,8 @@ function AboutPanel() {
     !state ? ''
     : state.phase === 'checking' ? 'Checking…'
     : state.phase === 'downloading' ? `Downloading ${state.version ?? 'update'}… ${state.percent ?? 0}%`
-    : state.phase === 'ready' ? `Version ${state.version} is downloaded and installs on restart`
-    : state.phase === 'none' ? 'You have the latest version'
+    : state.phase === 'ready' ? `Version ${state.version} has been downloaded and will be installed on restart`
+    : state.phase === 'none' ? 'RimDeck is up to date'
     : state.phase === 'error' ? `Could not check: ${state.error}`
     : 'Updates are checked automatically at startup'
   return (
@@ -386,7 +386,7 @@ function ConfigureMods() {
         </label>
       </div>
       <p className="dim" style={{ margin: '10px 14px 4px', fontSize: 12 }}>
-        Mods with saved settings, active ones first. A mod appears here once you've changed its options in game at least once. You can also right-click any mod → Configure.
+        Mods with saved settings, active ones first. A mod appears here after its options have been changed in game at least once. You can also right-click a mod and choose Configure mod settings.
       </p>
       <div className="panel-body" style={{ maxHeight: 320, overflow: 'auto', paddingTop: 4 }}>
         {rows.map(({ f, mod }) => (

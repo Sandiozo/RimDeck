@@ -3,6 +3,7 @@ import { watch, type FSWatcher } from 'node:fs'
 import { copyFile, cp, mkdir, open, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, relative } from 'node:path'
 import type {
+  Profile,
   GameInstall,
   InstallSummary,
   DefData,
@@ -173,7 +174,7 @@ export class Service {
     try {
       await stat(join(opts.gameDir, 'Data', 'Core'))
     } catch {
-      throw new Error('That folder is not a RimWorld install (no Data/Core inside)')
+      throw new Error('This folder is not a RimWorld install (no Data/Core folder found)')
     }
     const dataFolder = opts.dataFolder?.trim() || undefined
     if (dataFolder) await mkdir(join(dataFolder, 'Config'), { recursive: true })
@@ -225,6 +226,7 @@ export class Service {
       await this.saveSettings()
     }
     await this.rescan(false)
+    await this.migrateProfiles()
     if (!this.settings.firstRunDone) {
       await this.importRimSort()
       this.settings.firstRunDone = true
@@ -284,7 +286,7 @@ export class Service {
     return this.rules
   }
 
-  async saveModsConfig(activeMods: string[]): Promise<{ backup: string | null; config: ModsConfig | null }> {
+  async saveModsConfig(activeMods: string[]): Promise<{ backup: string | null; config: ModsConfig | null; user: UserData }> {
     const dir = this.settings.paths.configDir
     if (!dir) throw new Error('Config folder is not set')
     const known = new Set(this.config?.knownExpansions ?? [])
@@ -296,7 +298,42 @@ export class Service {
     })
     this.lastWrite = mtime
     this.config = await readModsConfig(dir)
-    return { backup, config: this.config }
+    const profile = this.currentProfile()
+    if (profile && profile.installId === this.settings.currentInstall) {
+      profile.mods = [...activeMods]
+      profile.updatedAt = Date.now()
+      await this.saveUser()
+    }
+    return { backup, config: this.config, user: this.user }
+  }
+
+  currentProfile(): Profile | undefined {
+    return this.user.profiles?.find((p) => p.id === this.user.currentProfile)
+  }
+
+  // First run with profiles: the current load order becomes "Default", and saved mod lists become profiles.
+  async migrateProfiles() {
+    if (this.user.profiles?.length) return
+    const now = Date.now()
+    const install = this.settings.currentInstall || 'default'
+    const profiles: Profile[] = [{ id: 'p-default', name: 'Default', installId: install, mods: this.config?.activeMods ?? [], createdAt: now, updatedAt: now }]
+    ;(this.user.lists ?? []).forEach((l, i) =>
+      profiles.push({ id: `p-${now.toString(36)}-${i}`, name: l.name, installId: install, mods: l.ids, createdAt: l.createdAt || now, updatedAt: l.createdAt || now }),
+    )
+    this.user = { ...this.user, profiles, currentProfile: 'p-default', lists: [] }
+    await this.saveUser()
+  }
+
+  // Switching loads the profile's install (if different) and writes its mods to ModsConfig.xml, ready to play.
+  async switchProfile(id: string): Promise<AppState> {
+    const p = this.user.profiles?.find((x) => x.id === id)
+    if (!p) throw new Error('Unknown profile')
+    if (!this.settings.installs.some((i) => i.id === p.installId)) throw new Error('This profile’s game install was removed. Select another install for it first.')
+    if (p.installId !== this.settings.currentInstall) await this.switchInstall(p.installId)
+    this.user.currentProfile = id
+    await this.saveUser()
+    if (this.settings.paths.configDir) await this.saveModsConfig(p.mods.length ? p.mods : ['ludeon.rimworld'])
+    return this.state()
   }
 
   async reloadConfig(): Promise<ModsConfig | null> {
@@ -497,7 +534,7 @@ export class Service {
   // Creates the picks mod on first use and keeps a "load last" rule for it so sorting never buries it.
   async pickTexture(key: string, packageId: string, source: string, hasDds: boolean) {
     const dir = this.settings.paths.localModsDir
-    if (!dir) throw new Error('Set your local Mods folder in Settings first')
+    if (!dir) throw new Error('Set the local mods folder in Settings first')
     const created = await ensurePicksMod(dir, ['1.4', '1.5', '1.6', '1.7'])
     const pick = await pickTexture(dir, key, packageId, source, hasDds)
     if (!this.user.userRules[PICKS_ID]?.loadBottom?.value) {
@@ -568,7 +605,7 @@ export class Service {
   }
 
   async assertGameClosed() {
-    if (await isGameRunning()) throw new Error('Close RimWorld first: it rewrites mod settings when it exits')
+    if (await isGameRunning()) throw new Error('Close RimWorld first. The game rewrites mod settings when it exits.')
   }
 
   async writeModSettings(path: string, root: SettingsNode): Promise<{ backup: string }> {
@@ -700,7 +737,7 @@ export class Service {
 
   /** Flattens a Workshop collection, following nested collections (each visited once, so loops can't recurse forever). */
   async workshopCollection(id: string): Promise<WorkshopCollection> {
-    if (!/^\d+$/.test(id)) throw new Error('Not a Workshop id')
+    if (!/^\d+$/.test(id)) throw new Error('Not a valid Workshop ID')
     const seen = new Set<string>([id])
     const nested: string[] = []
     const items: string[] = []
@@ -734,7 +771,7 @@ export class Service {
   // Downloads always go to the local mods folder: RimWorld only loads Data/, Mods/ and Steam's own Workshop folder.
   downloadTarget(id: string): { dir: string; replace?: string } | string {
     const dir = this.settings.paths.localModsDir
-    if (!dir) return 'Set a local mods folder in Settings first'
+    if (!dir) return 'Set the local mods folder in Settings first'
     const copies = this.mods.filter((m) => m.workshopId === id)
     if (copies.some((m) => m.source === 'workshop')) return 'Already subscribed in Steam, which keeps it up to date'
     const local = copies.find((m) => m.source === 'local')
@@ -744,7 +781,7 @@ export class Service {
 
   // A replaced copy goes to the Recycle Bin (or %APPDATA%/RimDeck/replaced-mods if that fails); it is never deleted outright.
   async retireMod(path: string) {
-    if (!inside(this.settings.paths.localModsDir, path)) throw new Error(`Refusing to replace ${path}: not inside the mods folder`)
+    if (!inside(this.settings.paths.localModsDir, path)) throw new Error(`Cannot replace ${path} because it is not inside the mods folder`)
     try {
       const { shell } = await import('electron')
       await shell.trashItem(path)
@@ -768,7 +805,7 @@ export class Service {
 
   async queueDownloads(ids: string[]): Promise<DownloadsState> {
     const wanted = [...new Set(ids.filter((id) => /^\d+$/.test(id)))]
-    if (!wanted.length) throw new Error('No Workshop ids given')
+    if (!wanted.length) throw new Error('No Workshop IDs provided')
     const details = await this.workshopDetails(wanted)
     this.downloads.targetDir = this.settings.paths.localModsDir
     this.downloads.add(

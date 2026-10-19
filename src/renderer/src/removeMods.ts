@@ -39,15 +39,15 @@ export async function removeMods(pids: string[]) {
   if (local.length) {
     const r = await api.trashMods(local.map((m) => m.packageId))
     if (r.trashed.length) messages.push(`${r.trashed.length} moved to the Recycle Bin`)
-    if (r.skipped.length) s.toast('error', `Couldn't delete ${r.skipped.length} mod${r.skipped.length === 1 ? '' : 's'}`)
+    if (r.skipped.length) s.toast('error', `Could not delete ${r.skipped.length} mod${r.skipped.length === 1 ? '' : 's'}`)
   }
   if (workshop.length) {
-    s.toast('info', 'Asking Steam to unsubscribe…')
+    s.toast('info', 'Requesting unsubscribe from Steam…')
     const r = await api.unsubscribeMods(workshop.map((m) => m.packageId))
     if (!r.ok) s.toast('error', `Unsubscribe failed: ${r.error}`)
     else {
-      if (r.done.length) messages.push(`${r.done.length} unsubscribed — Steam removes the files in a few seconds`)
-      if (r.failed.length) s.toast('error', `Steam refused ${r.failed.length}: ${r.failed[0].error}`)
+      if (r.done.length) messages.push(`${r.done.length} unsubscribed (Steam removes the files within a few seconds)`)
+      if (r.failed.length) s.toast('error', `Steam could not unsubscribe ${r.failed.length}: ${r.failed[0].error}`)
     }
   }
   await useStore.getState().reload()

@@ -4,7 +4,6 @@ import {
   CircleAlert,
   Gamepad2,
   LayoutGrid,
-  ListChecks,
   Play,
   Redo2,
   RefreshCw,
@@ -12,6 +11,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  UserRound,
   Image as ImageIcon,
   FileSearch,
   Gauge,
@@ -44,7 +44,7 @@ import { ResearchView } from './views/Research'
 import { ItemsView } from './views/Items'
 import { ChangesBanner } from './components/Changes'
 import { SettingsEditor } from './components/SettingsEditor'
-import { InstallSwitcher } from './components/Installs'
+import { ProfileSwitcher } from './components/ProfileSwitcher'
 
 const NAV: [View, string, typeof LayoutGrid][] = [
   ['mods', 'Mods', LayoutGrid],
@@ -56,7 +56,7 @@ const NAV: [View, string, typeof LayoutGrid][] = [
   ['items', 'Items', Boxes],
   ['search', 'Search mod files', FileSearch],
   ['performance', 'Load time', Gauge],
-  ['lists', 'Mod lists', ListChecks],
+  ['lists', 'Profiles', UserRound],
   ['downloads', 'Downloads & updates', Download],
 ]
 
@@ -71,7 +71,7 @@ export function App() {
       const st = useStore.getState()
       if (e.type === 'mods-changed') {
         st.reload()
-        st.toast('info', 'Mod folders changed — list refreshed')
+        st.toast('info', 'Mod folders changed. The list has been refreshed.')
       } else if (e.type === 'config-changed' && e.external) useStore.setState({ externalChange: true })
       else if (e.type === 'game-exited') st.toast('info', 'RimWorld closed')
       else if (e.type === 'downloads') st.setDownloads(e.state)
@@ -81,6 +81,10 @@ export function App() {
   // The installed app downloads updates in the background; offer a restart once one is ready.
   const [update, setUpdate] = useState<UpdateState | null>(null)
   const [updateDismissed, setUpdateDismissed] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
+  useEffect(() => {
+    api.appVersion().then(setAppVersion, () => {})
+  }, [])
   useEffect(() => {
     api.updateState().then(setUpdate, () => {})
     return onEvent((e) => e.type === 'update' && setUpdate(e.state))
@@ -147,9 +151,9 @@ export function App() {
       <header className={'titlebar' + (isElectron ? '' : ' browser')}>
         <div className="brand">
           <img className="brand-logo" src={iconSmall} alt="" draggable={false} />
-          RimDeck <small>{app.gameMajor}</small>
+          RimDeck {appVersion && <small>v{appVersion}</small>}
         </div>
-        <InstallSwitcher />
+        <ProfileSwitcher />
         <button className="btn ghost icon" title="Undo (Ctrl Z)" disabled={!s.past.length} onClick={s.undo}>
           <Undo2 size={15} />
         </button>
@@ -158,7 +162,7 @@ export function App() {
         </button>
         <div className="searchbox no-drag" onClick={() => s.setPalette(true)}>
           <Search size={14} />
-          <span className="grow">Search mods & commands</span>
+          <span className="grow">Search mods and commands</span>
           <span className="kbd">Ctrl K</span>
         </div>
         <button className="btn" title="Auto-sort (Ctrl Shift S)" onClick={s.previewSort}>
@@ -181,7 +185,7 @@ export function App() {
           </button>
         ))}
         <span className="rail-spacer" />
-        <button className="rail-btn" title="Rescan mod folders" onClick={() => s.reload().then(() => s.toast('ok', 'Rescanned'))}>
+        <button className="rail-btn" title="Rescan mod folders" onClick={() => s.reload().then(() => s.toast('ok', 'Mod folders rescanned'))}>
           <RefreshCw size={17} />
         </button>
         <button className={'rail-btn' + (s.view === 'settings' ? ' active' : '')} title="Settings" onClick={() => s.setView('settings')}>
@@ -203,7 +207,7 @@ export function App() {
           <div className="banner accent">
             <Download size={15} color="var(--accent)" />
             <span className="grow">
-              RimDeck {update.version} is ready. Restart to update{dirty ? ' (save your load order first)' : ''}, or it installs when you close RimDeck.
+              RimDeck {update.version} is ready to install. Restart to update{dirty ? ' (save your load order first)' : ''}, or it will be installed when you close RimDeck.
             </span>
             <button className="btn sm primary" disabled={dirty} onClick={() => api.updateInstall()}>
               Restart now
@@ -216,12 +220,12 @@ export function App() {
         {s.externalChange && (
           <div className="banner">
             <CircleAlert size={15} color="var(--warn)" />
-            <span className="grow">ModsConfig.xml was changed outside RimDeck (probably by the game).</span>
+            <span className="grow">ModsConfig.xml was changed outside RimDeck, most likely by the game.</span>
             <button className="btn sm" onClick={() => s.acceptExternal(true)}>
-              Load it
+              Load new version
             </button>
             <button className="btn sm ghost" onClick={() => s.acceptExternal(false)}>
-              Keep mine
+              Keep current
             </button>
           </div>
         )}
@@ -259,7 +263,7 @@ export function App() {
         <span className="grow" />
         <span className="item">RimWorld {app.gameVersion || '—'}</span>
         <span className="item">scan {app.scanMs} ms</span>
-        <span className="item">{s.rules ? `${Object.keys(s.rules.community).length} community rules` : 'rules loading…'}</span>
+        <span className="item">{s.rules ? `${Object.keys(s.rules.community).length} community rules` : 'Loading rules…'}</span>
       </footer>
 
       {s.palette && <Palette />}
@@ -280,7 +284,7 @@ function BisectBanner() {
       <div className="banner accent">
         <Bug size={15} color="var(--accent)" />
         <span className="grow">
-          Found it: <b>{m?.name ?? b.culprit}</b> is the most likely cause. Your original list has been restored (not yet saved).
+          Search complete: <b>{m?.name ?? b.culprit}</b> is the most likely cause. Your original list has been restored (not yet saved).
         </span>
         <button className="btn sm" onClick={() => { s.select(b.culprit!); s.stopBisect(false) }}>
           Show mod
@@ -296,19 +300,19 @@ function BisectBanner() {
     <div className="banner accent">
       <Bug size={15} color="var(--accent)" />
       <span className="grow">
-        <b>Step {b.step}</b> · testing {b.testing.length} of {b.suspects.length} suspects (about {remaining} more steps). Launch the game, then tell RimDeck whether the problem still happens.
+        <b>Step {b.step}</b> · testing {b.testing.length} of {b.suspects.length} suspects (about {remaining} more steps). Launch the game, then report whether the problem still occurs.
       </span>
       <button className="btn sm play" onClick={() => api.launch()}>
         <Play size={12} fill="currentColor" /> Launch
       </button>
       <button className="btn sm" onClick={() => s.bisectAnswer(true)}>
-        Still broken
+        Problem persists
       </button>
       <button className="btn sm" onClick={() => s.bisectAnswer(false)}>
-        Works now
+        Problem resolved
       </button>
       <button className="btn sm ghost" onClick={() => s.stopBisect(true)}>
-        Stop & restore
+        Stop and restore
       </button>
     </div>
   )

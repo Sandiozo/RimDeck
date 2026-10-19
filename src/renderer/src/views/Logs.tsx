@@ -53,7 +53,7 @@ export function LogsView() {
             {report
               ? `${report.path} · ${report.lines.toLocaleString()} lines · written ${timeAgo(report.mtime)}`
               : report === null
-                ? 'No Player.log found — launch the game once.'
+                ? 'No Player.log found. Launch the game once to create it.'
                 : 'Reading Player.log…'}
           </p>
         </div>
@@ -176,7 +176,7 @@ export function LogsView() {
                 </div>
               )
             })}
-            {!entries.length && <div className="empty">Nothing to show.</div>}
+            {!entries.length && <div className="empty">No matching entries.</div>}
           </div>
         </>
       )}

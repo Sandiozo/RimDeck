@@ -28,6 +28,7 @@ import {
   Boxes,
 } from 'lucide-react'
 import { useStore, type View } from '../store'
+import { switchProfile } from './ProfileSwitcher'
 import { api } from '../api'
 import { ModIcon } from './ui'
 
@@ -52,7 +53,7 @@ export function SortPreview() {
           {p.cycles.length > 0 && (
             <div className="issue-card warning" style={{ margin: '0 6px 10px' }}>
               <div className="t">
-                {p.cycles.length} conflicting rule {p.cycles.length === 1 ? 'loop' : 'loops'} — resolved by keeping your current order
+                {p.cycles.length} conflicting rule {p.cycles.length === 1 ? 'loop' : 'loops'}, resolved by keeping your current order
               </div>
               {p.cycles.map((c, i) => (
                 <div key={i} className="d">
@@ -130,7 +131,10 @@ export function Palette() {
     { id: 'v-perf', label: 'Go to Load time', icon: <Gauge size={15} />, run: go('performance'), group: 'Commands' },
     { id: 'v-search', label: 'Search inside mod files', icon: <Search size={15} />, run: go('search'), group: 'Commands' },
     { id: 'v-textures', label: 'Go to Texture conflicts', icon: <ImageIcon size={15} />, run: go('textures'), group: 'Commands' },
-    { id: 'v-lists', label: 'Go to Mod lists', icon: <ListChecks size={15} />, run: go('lists'), group: 'Commands' },
+    { id: 'v-lists', label: 'Go to Profiles', icon: <ListChecks size={15} />, run: go('lists'), group: 'Commands' },
+    ...(s.app?.user.profiles ?? [])
+      .filter((p) => p.id !== s.app?.user.currentProfile)
+      .map((p) => ({ id: 'profile:' + p.id, label: `Use profile: ${p.name}`, icon: <ListChecks size={15} />, run: () => void switchProfile(p.id), group: 'Commands' as const })),
     { id: 'v-downloads', label: 'Go to Downloads & updates', icon: <Download size={15} />, run: go('downloads'), group: 'Commands' },
     {
       id: 'collection',

@@ -77,7 +77,7 @@ export function Details() {
         <div className="hero blank" />
         <div className="details-body">
           <h2>No mod selected</h2>
-          <p className="muted">Pick a mod to see its details, problems, dependencies and Harmony patches.</p>
+          <p className="muted">Select a mod to see its details, problems, dependencies and Harmony patches.</p>
           <div className="d-section">
             <h4>Shortcuts</h4>
             <div className="kv">
@@ -130,7 +130,7 @@ export function Details() {
               {v}
             </span>
           ))}
-          {mod && mod.source !== 'dlc' && mod.source !== 'core' && !supports.includes(app.gameMajor) && <span className="chip warn">No {app.gameMajor}</span>}
+          {mod && mod.source !== 'dlc' && mod.source !== 'core' && !supports.includes(app.gameMajor) && <span className="chip warn">Not marked for {app.gameMajor}</span>}
           {update && (
             <span className="chip info click" title={`Workshop upload from ${new Date(update.remoteTime * 1000).toLocaleString()}`} onClick={() => s.setView('downloads')}>
               <Download size={10} /> Update available
@@ -224,7 +224,7 @@ export function Details() {
 
         {dependents.length > 0 && (
           <div className="d-section">
-            <h4>Required by {dependents.length} active</h4>
+            <h4>Required by {dependents.length} active mods</h4>
             {dependents.slice(0, 12).map((d) => (
               <div key={d} className="d-item click" onClick={() => s.select(d)}>
                 <ModIcon mod={s.activeMap.get(d)} size={16} />
@@ -260,7 +260,7 @@ export function Details() {
 
         <div className="d-section">
           <h4>
-            <Paintbrush size={11} /> Color & tags
+            <Paintbrush size={11} /> Color and tags
           </h4>
           <div className="swatches" style={{ marginBottom: 8 }}>
             <span className={'swatch none' + (!meta?.color ? ' on' : '')} onClick={() => setMeta({ color: undefined })}>
@@ -374,7 +374,7 @@ export function Details() {
               </>
             ) : (
               <p className="dim" style={{ margin: 0, fontSize: 12 }}>
-                {mod.assemblies.length} DLL{mod.assemblies.length === 1 ? '' : 's'}. Analysis reads them without running anything.
+                {mod.assemblies.length} DLL{mod.assemblies.length === 1 ? '' : 's'}. Analysis reads them without running any code.
               </p>
             )}
           </div>

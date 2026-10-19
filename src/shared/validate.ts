@@ -89,14 +89,14 @@ export function validate(input: ValidateInput): Issue[] {
         title: `Requires ${dep.name ?? (inst ? nameOf(inst) : dep.packageId)}`,
         detail: inst ? 'Installed but not active.' : 'Not installed.',
         fixes: inst
-          ? [{ label: 'Activate it', fix: { type: 'activate', packageIds: [inst] } }]
+          ? [{ label: 'Activate', fix: { type: 'activate', packageIds: [inst] } }]
           : dep.workshopId
             ? [
                 { label: 'Download', fix: { type: 'download', workshopIds: [dep.workshopId] } },
                 { label: 'Workshop page', fix: { type: 'url', url: workshopUrl(dep.workshopId) } },
               ]
             : dep.url
-              ? [{ label: 'Get it', fix: { type: 'url', url: dep.url } }]
+              ? [{ label: 'Open download page', fix: { type: 'url', url: dep.url } }]
               : [],
       })
     }

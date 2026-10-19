@@ -141,8 +141,20 @@ export interface ModList {
 export interface UserData {
   meta: Record<string, ModMeta> // keyed by packageId
   userRules: RuleMap
-  lists: ModList[]
+  lists: ModList[] // legacy: migrated into profiles on start
   ignored: string[] // packageIds whose warnings are muted
+  profiles?: Profile[]
+  currentProfile?: string
+}
+
+// A named setup: which game install (and so which game version) to use, and which mods in which order.
+export interface Profile {
+  id: string
+  name: string
+  installId: string
+  mods: string[] // packageIds in load order
+  createdAt: number
+  updatedAt: number
 }
 
 export interface ModsConfig {

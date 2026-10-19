@@ -192,7 +192,7 @@ export class SteamCmd {
    * retries with the code as `login`'s third argument. `password`/`code` are masked in everything passed on.
    */
   async login(user: string, password: string | null, code: string | null, onLine: (l: string) => void, onMobileConfirm: () => void): Promise<LoginResult> {
-    if (!validSteamUser(user)) return { ok: false, need: null, message: 'That does not look like a Steam account name' }
+    if (!validSteamUser(user)) return { ok: false, need: null, message: 'This is not a valid Steam account name' }
     const secrets = [password, code].filter((s): s is string => !!s)
     const mask = (t: string) => secrets.reduce((acc, s) => acc.split(s).join('****'), t)
     const log = join(this.dir, 'logs', 'console_log.txt')
@@ -346,19 +346,19 @@ export class DownloadQueue {
    */
   async login(user: string, password: string | null, code: string | null) {
     user = user.trim()
-    if (!validSteamUser(user)) return this.setLogin({ phase: 'error', message: 'That does not look like a Steam account name' })
+    if (!validSteamUser(user)) return this.setLogin({ phase: 'error', message: 'This is not a valid Steam account name' })
     if (this.running) return this.setLogin({ phase: 'error', message: 'Wait for the current downloads to finish' })
     if (code) password = this.pendingPassword
     if (code && !password) return this.setLogin({ phase: 'need-password', message: 'Enter your password again' })
     this.running = true
     this.phase = 'login'
     if (user !== this.account.user) this.account = { ...this.account, user, loggedIn: false }
-    this.setLogin({ phase: 'working', message: code ? 'Sending code…' : password ? 'Signing in…' : 'Checking the saved session…' })
+    this.setLogin({ phase: 'working', message: code ? 'Sending code…' : password ? 'Logging in…' : 'Checking the saved session…' })
     try {
       await this.ensureSteamcmd()
       this.phase = 'login'
       const r = await this.steamcmd.login(user, password, code, (l) => this.line(l), () =>
-        this.setLogin({ phase: 'confirm-mobile', message: 'Approve this sign-in in the Steam Mobile app' }),
+        this.setLogin({ phase: 'confirm-mobile', message: 'Approve this login in the Steam Mobile app' }),
       )
       if (r.ok) {
         this.pendingPassword = null
@@ -366,12 +366,12 @@ export class DownloadQueue {
         this.setLogin({ phase: 'idle', message: `Logged in as ${user}` })
       } else if (r.need === 'email' || r.need === '2fa') {
         this.pendingPassword = password
-        const again = code ? 'That code did not work. ' : ''
-        this.setLogin({ phase: 'need-code', codeKind: r.need, message: again + (r.need === 'email' ? 'Enter the Steam Guard code Steam emailed you' : 'Enter the code from your Steam Mobile authenticator') })
+        const again = code ? 'The code was not accepted. ' : ''
+        this.setLogin({ phase: 'need-code', codeKind: r.need, message: again + (r.need === 'email' ? 'Enter the Steam Guard code sent to your email' : 'Enter the code from your Steam Mobile authenticator') })
       } else if (r.need === 'password') {
         this.pendingPassword = null
         this.account = { ...this.account, loggedIn: false }
-        this.setLogin({ phase: 'need-password', message: r.message || (password ? 'Steam asked for the password again' : 'No saved session; enter your password') })
+        this.setLogin({ phase: 'need-password', message: r.message || (password ? 'Steam asked for the password again' : 'No saved session. Enter your password.') })
       } else {
         this.pendingPassword = null
         this.account = { ...this.account, loggedIn: false }
@@ -551,19 +551,19 @@ export class DownloadQueue {
           // The cached session was rejected: stop using it until the user logs in again.
           this.account = { ...this.account, loggedIn: false }
           void this.saveAccount().catch(() => {})
-          this.loginState = { phase: 'need-password', message: `Steam rejected the saved session (${result.loginFailed}); enter your password` }
+          this.loginState = { phase: 'need-password', message: `Steam rejected the saved session (${result.loginFailed}). Enter your password.` }
         }
         for (const [id, reason] of result.failed) {
           const job = this.jobs.find((j) => j.workshopId === id)!
           if (result.loginFailed && !cancelled)
-            this.set(id, { status: 'failed', message: 'Steam session expired; log in again under Steam account', needsLogin: true, finishedAt: Date.now() })
+            this.set(id, { status: 'failed', message: 'Steam session expired. Log in again under Steam account.', needsLogin: true, finishedAt: Date.now() })
           else if (!this.account.useForDownloads && NEEDS_LOGIN.test(reason) && !cancelled)
-            this.set(id, { status: 'failed', message: `${reason}. This item may need a Steam account that owns RimWorld`, needsLogin: true, finishedAt: Date.now() })
+            this.set(id, { status: 'failed', message: `${reason}. This item may require a Steam account that owns RimWorld.`, needsLogin: true, finishedAt: Date.now() })
           else if (cancelled) {
             // Only the items the user stopped are cancelled; the rest of the batch goes back in line.
             if (!this.cancelPick || this.cancelPick.has(id)) this.set(id, { status: 'cancelled', message: 'Cancelled', finishedAt: Date.now() })
             else this.set(id, { status: 'queued', attempts: job.attempts - 1 })
-          } else if (job.attempts < MAX_ATTEMPTS && /timeout|no result/i.test(reason)) this.set(id, { status: 'queued', message: `${reason} — retrying` })
+          } else if (job.attempts < MAX_ATTEMPTS && /timeout|no result/i.test(reason)) this.set(id, { status: 'queued', message: `${reason}. Retrying…` })
           else this.set(id, { status: 'failed', message: reason, finishedAt: Date.now() })
         }
         this.cancelPick = null

@@ -122,7 +122,7 @@ export function ContextMenu() {
             )
           })}
         {meta?.category && (
-          <span className="chip click" title="Back to automatic" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], category: undefined })))}>
+          <span className="chip click" title="Reset to automatic category" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], category: undefined })))}>
             Auto
           </span>
         )}

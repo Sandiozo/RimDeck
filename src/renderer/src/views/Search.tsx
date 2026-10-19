@@ -123,7 +123,7 @@ export function SearchView() {
           <p className="dim" style={{ margin: '0 0 12px', fontSize: 12 }}>
             {res.hits.length}
             {res.truncated ? '+' : ''} matching lines in {grouped.length} mods · {res.filesScanned.toLocaleString()} files searched in {res.ms} ms
-            {res.truncated && ' · showing the first 500, refine the search for more'}
+            {res.truncated && ' · showing the first 500. Refine the search to see more.'}
           </p>
 
           {(res.defines.length > 0 || res.patches.length > 0) && (
