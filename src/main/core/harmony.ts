@@ -53,7 +53,7 @@ const NTABLES = 0x2d
 const utf8 = new TextDecoder('utf-8')
 const utf16 = new TextDecoder('utf-16le')
 
-interface Md {
+export interface Md {
   buf: Uint8Array
   dv: DataView
   sections: number[] // [va, vsize, rawPtr, rawSize]*
@@ -75,7 +75,7 @@ interface Md {
   owners: Int32Array | null
 }
 
-function rvaToOff(md: { sections: number[]; buf: Uint8Array }, rva: number): number {
+export function rvaToOff(md: { sections: number[]; buf: Uint8Array }, rva: number): number {
   const s = md.sections
   for (let i = 0; i < s.length; i += 4) {
     const va = s[i], size = Math.max(s[i + 1], s[i + 3])
@@ -87,7 +87,7 @@ function rvaToOff(md: { sections: number[]; buf: Uint8Array }, rva: number): num
   return -1
 }
 
-function openMetadata(buf: Uint8Array): Md | null {
+export function openMetadata(buf: Uint8Array): Md | null {
   if (buf.length < 0x100 || buf[0] !== 0x4d || buf[1] !== 0x5a) return null
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
   const pe = dv.getUint32(0x3c, true)
@@ -253,12 +253,12 @@ function schema(rows: Uint32Array, s: number, g: number, b: number, big: boolean
 }
 
 // 1-based row
-function cell(md: Md, t: number, row: number, col: number): number {
+export function cell(md: Md, t: number, row: number, col: number): number {
   const off = md.tabOff[t] + (row - 1) * md.rowSize[t] + md.colOff[t][col]
   return md.colW[t][col] === 2 ? md.dv.getUint16(off, true) : md.dv.getUint32(off, true)
 }
 
-function str(md: Md, i: number): string {
+export function str(md: Md, i: number): string {
   if (i === 0) return ''
   const hit = md.strCache.get(i)
   if (hit !== undefined) return hit
@@ -271,7 +271,7 @@ function str(md: Md, i: number): string {
   return s
 }
 
-function userString(md: Md, i: number): string | null {
+export function userString(md: Md, i: number): string | null {
   const c = { p: md.usOff + i }
   if (c.p >= md.usEnd) return null
   const len = compressed(md.buf, c)
@@ -281,7 +281,7 @@ function userString(md: Md, i: number): string | null {
 
 interface Cur { p: number }
 
-function compressed(buf: Uint8Array, c: Cur): number {
+export function compressed(buf: Uint8Array, c: Cur): number {
   const b0 = buf[c.p]
   if (b0 === undefined) throw new RangeError('eof')
   if ((b0 & 0x80) === 0) { c.p += 1; return b0 }
@@ -295,7 +295,7 @@ function compressed(buf: Uint8Array, c: Cur): number {
 }
 
 // returns cursor at blob data start, plus end offset
-function blob(md: Md, i: number): { p: number; end: number } {
+export function blob(md: Md, i: number): { p: number; end: number } {
   const c = { p: md.blobOff + i }
   if (c.p >= md.blobEnd) throw new RangeError('blob')
   const len = compressed(md.buf, c)
@@ -317,7 +317,7 @@ function enclosingOf(md: Md): Int32Array {
   return (md.enclosing = enc)
 }
 
-function typeDefName(md: Md, row: number, depth = 0): string {
+export function typeDefName(md: Md, row: number, depth = 0): string {
   if (row < 1 || row > md.rows[TYPEDEF]) return '?'
   const hit = md.typeDefNames[row]
   if (hit !== undefined) return hit
@@ -331,7 +331,7 @@ function typeDefName(md: Md, row: number, depth = 0): string {
   return full
 }
 
-function typeRefName(md: Md, row: number, depth = 0): string {
+export function typeRefName(md: Md, row: number, depth = 0): string {
   if (row < 1 || row > md.rows[TYPEREF]) return '?'
   const hit = md.typeRefNames[row]
   if (hit !== undefined) return hit
@@ -346,7 +346,7 @@ function typeRefName(md: Md, row: number, depth = 0): string {
 }
 
 // TypeDefOrRef (2-bit tag) or a raw metadata token
-function typeName(md: Md, tag: number, row: number): string {
+export function typeName(md: Md, tag: number, row: number): string {
   if (tag === 0) return typeDefName(md, row)
   if (tag === 1) return typeRefName(md, row)
   if (tag === 2) return typeSpecName(md, row)
@@ -392,11 +392,11 @@ function stripAssembly(s: string): string {
 // ---------------------------------------------------------------------------
 // Methods
 
-function methodListEnd(md: Md): number {
+export function methodListEnd(md: Md): number {
   return (md.rows[METHODPTR] || md.rows[METHOD]) + 1
 }
 
-function methodsOf(md: Md, typeRow: number): number[] {
+export function methodsOf(md: Md, typeRow: number): number[] {
   const end = methodListEnd(md)
   const a = cell(md, TYPEDEF, typeRow, 5)
   const b = typeRow < md.rows[TYPEDEF] ? cell(md, TYPEDEF, typeRow + 1, 5) : end
@@ -796,8 +796,8 @@ const REFLECTION_MEMBERS: Record<string, number> = {
 }
 
 // operand sizes for one-byte opcodes (0xff = switch)
-const OPERAND = new Uint8Array(256)
-const TWO_BYTE_OPERAND = new Uint8Array(32)
+export const OPERAND = new Uint8Array(256)
+export const TWO_BYTE_OPERAND = new Uint8Array(32)
 {
   for (let i = 0x0e; i <= 0x13; i++) OPERAND[i] = 1
   OPERAND[0x1f] = 1

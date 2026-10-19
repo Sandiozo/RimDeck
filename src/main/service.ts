@@ -12,6 +12,7 @@ import type {
   ModCost,
   SettingsFile,
   SettingsNode,
+  SettingsSchema,
   TextureReport,
   XmlReport,
   XmlSearchResult,
@@ -44,6 +45,7 @@ import { scanAll } from './core/scanner.ts'
 import { textureLookup, textureReport } from './core/textures.ts'
 import { extractDefData } from './core/defdata.ts'
 import { isGameRunning, matchSettingsFiles, moveToBackup, readSettings, resetSettings, writeSettings } from './core/modsettings.ts'
+import { enumMembersIn, readAssemblySettings, type AssemblySettings } from './core/settingschema.ts'
 import { isSlowXpath, mediaStats, score, startupFromLog } from './core/loadtime.ts'
 import { ensurePicksMod, listPicks, pickTexture, PICKS_ID, unpickTexture } from './core/texturepicks.ts'
 import { steamWorkshop, type SteamJobResult } from './core/steamclient.ts'
@@ -596,12 +598,91 @@ export class Service {
   }
 
   async modSettings(): Promise<SettingsFile[]> {
-    const folders = this.mods.filter((m) => m.source === 'local' || m.source === 'workshop').map((m) => m.folder)
-    return matchSettingsFiles(this.settings.paths.configDir, folders)
+    const mods = this.mods.filter((m) => m.source === 'local' || m.source === 'workshop')
+    const configDir = this.settings.paths.configDir
+    const files = await matchSettingsFiles(configDir, mods.map((m) => m.folder))
+    if (!configDir) return files
+    // Mods whose settings were never changed have no file yet; list them so they can be edited too.
+    const have = new Set(files.map((f) => f.name.toLowerCase()))
+    const order = new Map((this.config?.activeMods ?? []).map((id, i) => [id.toLowerCase(), i]))
+    const candidates = new Map<string, { m: ModInfo; name: string; modClass: string; saved: boolean }[]>()
+    for (const m of mods) {
+      if (!m.assemblies.length) continue
+      const info = this.settingsInfo(m)
+      for (const { modClass, settingsClass } of info.mods) {
+        if (!info.schemas[settingsClass]?.length) continue
+        const name = `Mod_${m.folder}_${modClass}.xml`
+        const list = candidates.get(settingsClass) ?? []
+        list.push({ m, name, modClass, saved: have.has(name.toLowerCase()) })
+        candidates.set(settingsClass, list)
+      }
+    }
+    // Some mods ship a copy of another mod's DLL. The game keeps one settings file per class,
+    // owned by the copy that loads first, so only that one is offered.
+    for (const list of candidates.values()) {
+      if (list.some((c) => c.saved)) continue
+      const rank = (c: { m: ModInfo }) => order.get(c.m.packageId.toLowerCase()) ?? Infinity
+      const c = list.reduce((a, b) => (rank(b) < rank(a) ? b : a))
+      if (have.has(c.name.toLowerCase())) continue
+      have.add(c.name.toLowerCase())
+      files.push({ path: join(configDir, c.name), name: c.name, folder: c.m.folder, className: c.modClass, size: 0, mtime: 0, exists: false })
+    }
+    return files
+  }
+
+  // Settings declared in a mod's code, merged over the DLLs that load for the current game version.
+  settingsInfo(m: ModInfo): AssemblySettings {
+    const out: AssemblySettings = { mods: [], schemas: {} }
+    const game = join(this.settings.paths.gameDir, 'RimWorldWin64_Data', 'Managed', 'Assembly-CSharp.dll')
+    const resolveEnum = (name: string) => {
+      for (const f of [...m.assemblies, game]) {
+        const r = enumMembersIn(f, name)
+        if (r) return r
+      }
+      return null
+    }
+    for (const dll of m.assemblies) {
+      const info = readAssemblySettings(dll, m.mtime, resolveEnum)
+      if (!info) continue
+      out.mods.push(...info.mods)
+      Object.assign(out.schemas, info.schemas)
+    }
+    return out
+  }
+
+  async modSettingsSchema(path: string): Promise<SettingsSchema | null> {
+    const file = this.settingsPath(path)
+    const name = basename(file).toLowerCase()
+    const m = this.mods
+      .filter((x) => (x.source === 'local' || x.source === 'workshop') && name.startsWith(`mod_${x.folder.toLowerCase()}_`))
+      .sort((a, b) => b.folder.length - a.folder.length)[0]
+    if (!m) return null
+    const info = this.settingsInfo(m)
+    let cls: string | undefined
+    try {
+      cls = (await readSettings(file)).children?.find((c) => c.tag === 'ModSettings')?.attrs?.Class
+    } catch {
+      // not saved yet
+    }
+    if (!cls) {
+      const modClass = name.slice(`mod_${m.folder.toLowerCase()}_`.length, -4)
+      cls = info.mods.find((x) => x.modClass.toLowerCase() === modClass)?.settingsClass
+    }
+    const entries = cls ? info.schemas[cls] : undefined
+    return cls && entries ? { settingsClass: cls, entries } : null
   }
 
   async readModSettings(path: string): Promise<SettingsNode> {
-    return readSettings(this.settingsPath(path))
+    const file = this.settingsPath(path)
+    try {
+      return await readSettings(file)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+      const schema = await this.modSettingsSchema(file)
+      if (!schema) throw e
+      // The same shape the game writes when every setting is at its default.
+      return { id: '', tag: 'SettingsBlock', children: [{ id: '0/ModSettings', tag: 'ModSettings', attrs: { Class: schema.settingsClass }, text: '' }] }
+    }
   }
 
   async assertGameClosed() {

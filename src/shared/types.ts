@@ -407,6 +407,22 @@ export interface SettingsFile {
   className: string
   size: number
   mtime: number
+  /** False for a mod whose settings were never saved; the file is created on the first save. */
+  exists?: boolean
+}
+
+export interface SettingSchema {
+  label: string
+  type: 'bool' | 'int' | 'float' | 'string' | 'enum'
+  /** The default as RimWorld writes it; null when the default is null. */
+  def: string | null
+  options?: string[]
+}
+
+/** Settings a mod declares in code, read from its DLL. */
+export interface SettingsSchema {
+  settingsClass: string
+  entries: SettingSchema[]
 }
 
 export interface DirCondition {

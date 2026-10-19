@@ -20,6 +20,7 @@ export interface SettingsFile {
   className: string
   size: number
   mtime: number
+  exists?: boolean
 }
 
 // ---------- file discovery ----------

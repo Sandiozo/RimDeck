@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { create } from 'zustand'
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Pencil, RotateCcw, Save, Search, SlidersHorizontal, TriangleAlert, Undo2, FolderOpen } from 'lucide-react'
-import type { SettingsFile, SettingsNode } from '@shared/types'
+import type { SettingSchema, SettingsFile, SettingsNode, SettingsSchema } from '@shared/types'
 import { useStore } from '../store'
 import { api } from '../api'
 import { bytes, timeAgo } from '../lib'
@@ -41,7 +41,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
               {f.className}
             </span>
             <span className="dim" style={{ fontSize: 11 }}>
-              {bytes(f.size)} · {timeAgo(f.mtime)}
+              {f.exists === false ? 'All defaults' : `${bytes(f.size)} · ${timeAgo(f.mtime)}`}
             </span>
             <button className="btn sm" onClick={() => useStore.setState({ settingsEditor: f.path })}>
               Edit
@@ -49,6 +49,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
             <button
               className="btn sm ghost icon"
               title="Reset to defaults (the file is backed up, and the game recreates it)"
+              disabled={f.exists === false}
               onClick={async () => {
                 if (!confirm(`Reset ${f.className} to its defaults?\nThe current file is moved to RimDeck's backups.`)) return
                 try {
@@ -66,7 +67,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
         ))
       ) : (
         <p className="dim" style={{ margin: 0, fontSize: 12 }}>
-          {files ? 'No saved settings yet. The game writes them the first time you change this mod’s options.' : 'Loading…'}
+          {files ? 'This mod has no settings RimDeck can edit.' : 'Loading…'}
         </p>
       )}
     </div>
@@ -84,7 +85,13 @@ interface Row {
   path: string
   group: boolean
   count: number
+  /** What the mod's code says about this setting, when known. */
+  schema?: SettingSchema
+  /** Not in the file: the setting is at its default. */
+  virtual?: boolean
 }
+
+const NEW = 'new:'
 
 // "overviewLetterSent" → "Overview letter sent", "IsInValidBestStorage_Patch" → "Is in valid best storage patch"
 function humanize(name: string): string {
@@ -122,14 +129,28 @@ function itemLabel(n: SettingsNode, i: number): { label: string; hint?: string; 
   return { label: `#${i + 1}` }
 }
 
-function flatten(root: SettingsNode): Row[] {
+function flatten(root: SettingsNode, schema: SettingsSchema | null): Row[] {
   const rows: Row[] = []
+  // Settings the code declares come first, in the mod's own order; ones still at their
+  // default are not in the file and are shown from the code.
+  const top = (n: SettingsNode) => {
+    const byTag = new Map((n.children ?? []).filter(isLeaf).map((c) => [c.tag, c]))
+    const used = new Set<SettingsNode>()
+    for (const e of schema?.entries ?? []) {
+      const c = byTag.get(e.label)
+      if (c) used.add(c)
+      const node = c ?? { id: NEW + e.label, tag: e.label, text: e.def ?? '' }
+      const label = tagLabel(e.label).label
+      rows.push({ node, depth: 0, label, path: label, group: false, count: 0, schema: e, virtual: !c })
+    }
+    walk({ ...n, children: (n.children ?? []).filter((c) => !used.has(c)) }, 0, [])
+  }
   const walk = (n: SettingsNode, depth: number, trail: string[], skip?: SettingsNode) => {
     for (const [i, c] of (n.children ?? []).entries()) {
       if (c === skip) continue
       // The ModSettings wrapper adds no information.
-      if (depth === 0 && c.tag === 'ModSettings' && c.children) {
-        walk(c, 0, trail)
+      if (depth === 0 && c.tag === 'ModSettings') {
+        top(c)
         continue
       }
       // A "key" that already names its entry is not repeated inside it.
@@ -190,6 +211,7 @@ export function SettingsEditor() {
   const s = useStore()
   const path = s.settingsEditor
   const [root, setRoot] = useState<SettingsNode | null>(null)
+  const [schema, setSchema] = useState<SettingsSchema | null>(null)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [q, setQ] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -205,14 +227,16 @@ export function SettingsEditor() {
     setUnlocked(new Set())
     setQ('')
     setError('')
-    api.readModSettings(path).then((r) => {
+    setSchema(null)
+    Promise.all([api.readModSettings(path), api.modSettingsSchema(path).catch(() => null)]).then(([r, sc]) => {
+      setSchema(sc)
       setRoot(r)
-      setCollapsed(initialCollapsed(flatten(r)))
+      setCollapsed(initialCollapsed(flatten(r, sc)))
     }, (e) => setError(e.message))
     api.gameRunning().then(setRunning)
   }, [path])
 
-  const rows = useMemo(() => (root ? flatten(root) : []), [root])
+  const rows = useMemo(() => (root ? flatten(root, schema) : []), [root, schema])
   const values = useMemo(() => rows.filter((r) => !r.group).length, [rows])
   const visible = useMemo(() => {
     const t = q.trim().toLowerCase()
@@ -242,17 +266,22 @@ export function SettingsEditor() {
     useStore.setState({ settingsEditor: null })
   }
 
-  const apply = (n: SettingsNode): SettingsNode => ({
-    ...n,
-    text: n.id in edits ? edits[n.id] : n.text,
-    children: n.children?.map(apply),
-  })
+  // Settings changed away from their default are added to the ModSettings element, like the game does.
+  const added = (schema?.entries ?? [])
+    .filter((e) => NEW + e.label in edits)
+    .map((e) => ({ id: NEW + e.label, tag: e.label, text: edits[NEW + e.label] }))
+  const apply = (n: SettingsNode, depth = 0): SettingsNode => {
+    const children = n.children?.map((c) => apply(c, depth + 1))
+    const extra = depth === 1 && n.tag === 'ModSettings' ? added.filter((a) => !children?.some((c) => c.tag === a.tag)) : []
+    if (extra.length) return { ...n, text: undefined, children: [...(children ?? []), ...extra] }
+    return { ...n, text: n.id in edits ? edits[n.id] : n.text, children }
+  }
 
   const save = async () => {
     if (!root) return
     try {
-      await api.writeModSettings(path, apply(root))
-      s.toast('ok', `Saved ${changed} change${changed === 1 ? '' : 's'}. The previous file was backed up.`)
+      const { backup } = await api.writeModSettings(path, apply(root))
+      s.toast('ok', `Saved ${changed} change${changed === 1 ? '' : 's'}. ${backup ? 'The previous file was backed up.' : 'The settings file was created.'}`)
       setRoot(apply(root))
       setEdits({})
       void reloadFiles()
@@ -275,8 +304,34 @@ export function SettingsEditor() {
     setCollapsed(next)
   }
 
-  const control = (n: SettingsNode) => {
+  const control = (n: SettingsNode, sc?: SettingSchema) => {
     const val = edits[n.id] ?? n.text ?? ''
+    if (sc) {
+      if (sc.type === 'bool') return <Toggle on={val === 'True'} onChange={(v) => setVal(n, v ? 'True' : 'False')} />
+      if (sc.type === 'enum') {
+        const opts = sc.options?.includes(val) || !val ? sc.options ?? [] : [val, ...(sc.options ?? [])]
+        return (
+          <select className="input setting-input" value={val} onChange={(e) => setVal(n, e.target.value)}>
+            {opts.map((o) => (
+              <option key={o} value={o}>
+                {humanize(o)}
+              </option>
+            ))}
+          </select>
+        )
+      }
+      const num = sc.type === 'int' || sc.type === 'float'
+      const bad = num && !(sc.type === 'int' ? /^-?\d+$/ : /^-?\d+(\.\d+)?(E[+-]?\d+)?$/i).test(val)
+      return (
+        <input
+          className={'input mono setting-input' + (num ? ' num' : '') + (bad ? ' bad' : '')}
+          value={val}
+          placeholder={sc.def === null ? 'not set' : 'empty'}
+          onChange={(e) => setVal(n, e.target.value)}
+          spellCheck={false}
+        />
+      )
+    }
     if (n.attrs?.IsNull === 'True') return <span className="setting-tag">Not set</span>
     // Empty elements are usually objects that only hold default values; editing them is opt-in.
     if (n.text === '' && !(n.id in edits) && !unlocked.has(n.id)) {
@@ -356,7 +411,7 @@ export function SettingsEditor() {
         <div className="modal-body settings-body">
           {error && <div className="empty">{error}</div>}
           {!root && !error && <div className="empty">Reading…</div>}
-          {root && !rows.length && <div className="empty">This file has no saved values.</div>}
+          {root && !rows.length && <div className="empty">This mod has no settings RimDeck can edit. Its options may only be available in game.</div>}
           {visible.slice(0, 600).map((r) => {
             const n = r.node
             const dirty = n.id in edits
@@ -383,7 +438,12 @@ export function SettingsEditor() {
                   <span className="ellipsis">{q ? r.path : r.label}</span>
                   {!q && r.hint && <span className="setting-hint">{r.hint}</span>}
                 </span>
-                {control(n)}
+                {control(n, r.schema)}
+                {r.schema && r.schema.def !== null && (edits[n.id] ?? n.text) !== r.schema.def && !(dirty && n.text === r.schema.def) && (
+                  <button className="btn sm ghost icon" title={`Reset to default (${r.schema.def || 'empty'})`} onClick={() => setVal(n, r.schema!.def!)}>
+                    <RotateCcw size={11} />
+                  </button>
+                )}
                 {dirty && (
                   <button className="btn sm ghost icon" title={`Undo (was ${n.text || 'empty'})`} onClick={() => setVal(n, n.text!)}>
                     <Undo2 size={11} />
@@ -397,7 +457,11 @@ export function SettingsEditor() {
         </div>
         <div className="modal-foot">
           <span className="grow dim" style={{ alignSelf: 'center', fontSize: 12 }}>
-            {changed ? `${changed} unsaved change${changed === 1 ? '' : 's'}` : 'Names come from the mod’s code; the game’s settings window may label them differently.'}
+            {changed
+              ? `${changed} unsaved change${changed === 1 ? '' : 's'}`
+              : schema
+                ? 'Defaults and names come from the mod’s code; the game’s settings window may label them differently.'
+                : 'Names come from the mod’s code; the game’s settings window may label them differently.'}
           </span>
           <button className="btn" onClick={close}>
             Close

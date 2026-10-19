@@ -48,7 +48,7 @@ export function ModSettingsView() {
       <div className="page-head">
         <div className="grow">
           <h1>Mod settings</h1>
-          <p>Edit the saved settings of your mods without starting the game. A mod appears here after its options have been changed in game at least once.</p>
+          <p>Edit your mods’ settings without starting the game. Settings that were never changed are shown with the defaults from the mod’s code.</p>
         </div>
         <button className="btn" onClick={() => load()}>
           <RefreshCw size={14} /> Refresh
@@ -89,13 +89,13 @@ export function ModSettingsView() {
                   </td>
                   <td style={{ width: 110 }}>{active ? <span className="chip ok">Active</span> : <span className="chip">Inactive</span>}</td>
                   <td className="muted" style={{ width: 170, fontSize: 12 }}>
-                    {bytes(f.size)} · {timeAgo(f.mtime)}
+                    {f.exists === false ? 'All defaults' : `${bytes(f.size)} · ${timeAgo(f.mtime)}`}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button className="btn sm primary" onClick={() => openSettings(f.path)}>
                       <SlidersHorizontal size={12} /> Configure
                     </button>{' '}
-                    <button className="btn sm ghost icon" title="Reset to defaults" onClick={() => reset(f.path, mod?.name ?? f.className)}>
+                    <button className="btn sm ghost icon" title="Reset to defaults" disabled={f.exists === false} onClick={() => reset(f.path, mod?.name ?? f.className)}>
                       <RotateCcw size={12} />
                     </button>
                   </td>

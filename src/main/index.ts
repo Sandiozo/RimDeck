@@ -51,6 +51,7 @@ const API = [
   'readModSettings',
   'writeModSettings',
   'resetModSettings',
+  'modSettingsSchema',
   'archiveSettings',
   'checkGameRunning',
   'loadReport',
