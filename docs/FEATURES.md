@@ -1,4 +1,6 @@
-# RimDeck — feature reference
+<p align="center"><img src="logo.png" alt="RimDeck" width="420"></p>
+
+# Feature reference
 
 A fast, modern mod manager for RimWorld 1.7. Dark, compact, keyboard-friendly.
 

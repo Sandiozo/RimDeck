@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="resources/icon-256.png" width="104" alt="RimDeck logo">
-
-# RimDeck
+<img src="docs/banner.jpg" alt="RimDeck" width="100%">
 
 ### The fast, modern mod manager for RimWorld 1.7
 
@@ -10,11 +8,11 @@ Explained auto-sort · live problem checks · texture & research insight · one-
 
 <br>
 
-<a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-7c8cff?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEyIDN2MTIiLz48cGF0aCBkPSJtNyAxMCA1IDUgNS01Ii8+PHBhdGggZD0iTTUgMjFoMTQiLz48L3N2Zz4="></a>
+<a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-d8742b?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEyIDN2MTIiLz48cGF0aCBkPSJtNyAxMCA1IDUgNS01Ii8+PHBhdGggZD0iTTUgMjFoMTQiLz48L3N2Zz4="></a>
 
 <br>
 
-<a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sandiozo/RimDeck?style=flat-square&label=release&color=7c8cff"></a>
+<a href="https://github.com/Sandiozo/RimDeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sandiozo/RimDeck?style=flat-square&label=release&color=d8742b"></a>
 <a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=b58cff"></a>
 <img alt="RimWorld 1.7" src="https://img.shields.io/badge/RimWorld-1.7-f5b544?style=flat-square">
 <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-3ecf8e?style=flat-square">
@@ -24,7 +22,7 @@ Explained auto-sort · live problem checks · texture & research insight · one-
 
 <br><br>
 
-<img src="docs/hero.png" alt="RimDeck showing an active load order, mod details and the research tree" width="100%">
+<img src="docs/hero.jpg" alt="RimDeck showing an active load order, mod details and the research tree" width="100%">
 
 </div>
 

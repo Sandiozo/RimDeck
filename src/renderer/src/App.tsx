@@ -23,6 +23,8 @@ import {
   X,
 } from 'lucide-react'
 import { useStore, isDirty, type View } from './store'
+import iconSmall from './assets/icon-64.png'
+import iconLarge from './assets/icon-128.png'
 import type { UpdateState } from '@shared/types'
 import { isElectron, onEvent, api } from './api'
 import { ModList } from './components/ModList'
@@ -129,7 +131,7 @@ export function App() {
     return (
       <div className="splash">
         <div style={{ textAlign: 'center' }}>
-          <div className="brand-mark" />
+          <img className="brand-logo big" src={iconLarge} alt="" draggable={false} />
           {s.loading}
         </div>
       </div>
@@ -144,7 +146,7 @@ export function App() {
     <div className="app">
       <header className={'titlebar' + (isElectron ? '' : ' browser')}>
         <div className="brand">
-          <span className="brand-mark" />
+          <img className="brand-logo" src={iconSmall} alt="" draggable={false} />
           RimDeck <small>{app.gameMajor}</small>
         </div>
         <InstallSwitcher />

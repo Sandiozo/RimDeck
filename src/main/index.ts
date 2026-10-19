@@ -205,7 +205,7 @@ function createWindow() {
     backgroundColor: '#0a0b0e',
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#0a0b0e', symbolColor: '#9aa3b2', height: 44 },
-    icon: join(here, '../../resources/icon.png'),
+    icon: join(here, '../../resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),
       contextIsolation: true,
