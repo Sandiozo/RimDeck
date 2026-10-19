@@ -66,12 +66,13 @@ On first start, RimDeck finds RimWorld through Steam or imports your RimSort fol
 | ![Mod settings](docs/screenshots/settings-editor.png) | ![Mod settings list](docs/screenshots/modsettings.png) |
 | **Mod settings** — the game's labels, sliders and defaults, without starting the game | **Every mod with settings** — including ones never changed |
 | ![Saves](docs/screenshots/saves.png) | ![Light theme](docs/screenshots/light.png) |
-| **Saves and Continue** — see a save's mods, play it, or continue your latest one | **Light theme** — or dark, or follow Windows |
+| **Saves and Continue** — see a save's mods, play it, or continue your latest one | **Light theme** — or dark, or follow your system |
 | ![Problems](docs/screenshots/problems.png) | |
 | **Problems** — missing dependencies, conflicts and outdated mods, with one-click fixes | |
 
 ## What it does
 
+- **Windows, macOS and Linux** — one app on every system, for RimWorld 1.6 and the 1.7 alpha; finds Steam, Flatpak Steam and RimSort automatically.
 - **Load order** — drag and drop, multi-select, undo/redo, Ctrl+K search, filters like `is:error`, `is:outdated`, `v:1.6`, `is:new`.
 - **Auto-sort** — About.xml rules, dependencies, RimSort's community rules and rules inferred from XML overrides, with the reason for every move.
 - **Problem checks** — missing dependencies, broken load-order rules, incompatibilities, duplicates, outdated mods with updated replacements.
