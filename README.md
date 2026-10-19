@@ -7,6 +7,7 @@
   <a href="https://github.com/Sandiozo/RimDeck/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Sandiozo/RimDeck/total?style=flat-square&color=b58cff"></a>
   <img alt="Windows" src="https://img.shields.io/badge/platform-Windows-3ecf8e?style=flat-square">
   <img alt="RimWorld 1.7" src="https://img.shields.io/badge/RimWorld-1.7-f5b544?style=flat-square">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-9aa3b2?style=flat-square"></a>
 </p>
 
 **RimDeck** loads a 350-mod list in about a quarter of a second, sorts it with explanations, catches problems before you launch, and shows what your mods actually do to textures, research and items.
@@ -50,3 +51,7 @@ npm install
 npm run dev        # run with hot reload
 npm run dist       # build the installer into release/
 ```
+
+## License
+
+[MIT](LICENSE) © Sandis (Sandiozo)
