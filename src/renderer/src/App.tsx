@@ -5,6 +5,7 @@ import {
   Gamepad2,
   LayoutGrid,
   Play,
+  StepForward,
   Redo2,
   RefreshCw,
   Save,
@@ -29,6 +30,7 @@ import iconLarge from './assets/icon-128.png'
 import type { UpdateState } from '@shared/types'
 import { isElectron, onEvent, api } from './api'
 import { useTheme } from './theme'
+import { timeAgo } from './lib'
 import { clickable } from './components/ui'
 import { ModList } from './components/ModList'
 import { Details } from './components/Details'
@@ -178,6 +180,7 @@ export function App() {
         <button className={'btn' + (dirty ? ' primary' : '')} title="Save to ModsConfig.xml (Ctrl S)" onClick={s.save} disabled={!dirty}>
           <Save size={14} /> Save{dirty && <span className="pip" />}
         </button>
+        <ContinueButton />
         <button className="btn play" title="Save and launch RimWorld (F5)" onClick={s.launch}>
           <Play size={14} fill="currentColor" /> Play
         </button>
@@ -323,5 +326,32 @@ function BisectBanner() {
         Stop and restore
       </button>
     </div>
+  )
+}
+
+// Starts the game straight into the newest save. The tooltip names it so it's clear which one.
+function ContinueButton() {
+  const continueGame = useStore((st) => st.continueGame)
+  const install = useStore((st) => st.app?.settings.currentInstall)
+  const [latest, setLatest] = useState<{ name: string; file: string; mtime: number } | null>(null)
+  useEffect(() => {
+    const load = () => api.latestSave().then(setLatest, () => setLatest(null))
+    load()
+    window.addEventListener('focus', load)
+    const off = onEvent((e) => e.type === 'game-exited' && load())
+    return () => {
+      window.removeEventListener('focus', load)
+      off()
+    }
+  }, [install])
+  return (
+    <button
+      className="btn continue"
+      disabled={!latest}
+      title={latest ? `Continue “${latest.name}” (saved ${timeAgo(latest.mtime)}). Saves the load order, starts RimWorld and opens this save once loading is done.` : 'No saves yet'}
+      onClick={() => continueGame(latest?.file)}
+    >
+      <StepForward size={14} /> Continue
+    </button>
   )
 }

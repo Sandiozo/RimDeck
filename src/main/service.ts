@@ -49,10 +49,11 @@ import { isGameRunning, matchSettingsFiles, moveToBackup, readSettings, resetSet
 import { enumMembersIn, readAssemblySettings, type AssemblySettings } from './core/settingschema.ts'
 import { isSlowXpath, mediaStats, score, startupFromLog } from './core/loadtime.ts'
 import { ensurePicksMod, listPicks, pickTexture, PICKS_ID, unpickTexture } from './core/texturepicks.ts'
+import { clearContinueRequest, CONTINUE_DLL, ensureContinueMod, latestSave, writeContinueRequest } from './core/continue.ts'
 import { steamWorkshop, type SteamJobResult } from './core/steamclient.ts'
 import { buildXmlReport, indexModXml, searchXml, type ModXml } from './core/xmlindex.ts'
 import { DownloadQueue, SteamCmd } from './core/steamcmd.ts'
-import { readJson, writeJson } from './core/store.ts'
+import { exists, readJson, writeJson } from './core/store.ts'
 import { fetchCollections, fetchDetails, newestMtime, readWorkshopAcf } from './core/workshop.ts'
 
 interface PlaySnapshot {
@@ -637,9 +638,11 @@ export class Service {
   // Settings declared in a mod's code, merged over the DLLs that load for the current game version.
   settingsInfo(m: ModInfo): AssemblySettings {
     const out: AssemblySettings = { mods: [], schemas: {} }
-    const game = join(this.settings.paths.gameDir, 'RimWorldWin64_Data', 'Managed', 'Assembly-CSharp.dll')
+    // 1.7 keeps the game code next to the executable; Unity versions keep it under *_Data/Managed.
+    const g = this.settings.paths.gameDir
+    const game = ['', 'RimWorldWin64_Data/Managed', 'RimWorldLinux_Data/Managed', 'RimWorldMac.app/Contents/Resources/Data/Managed'].map((d) => join(g, d, 'Assembly-CSharp.dll'))
     const resolveEnum = (name: string) => {
-      for (const f of [...m.assemblies, game]) {
+      for (const f of [...m.assemblies, ...game]) {
         const r = enumMembersIn(f, name)
         if (r) return r
       }
@@ -771,20 +774,45 @@ export class Service {
     return report
   }
 
-  async launch(): Promise<{ ok: boolean; message: string }> {
+  /** The newest save, for the Continue button. */
+  async latestSave() {
+    return latestSave(this.settings.paths.configDir)
+  }
+
+  /** Installs the helper mod that opens a save on startup; the renderer activates it. */
+  async prepareContinue(): Promise<{ created: boolean; state: AppState | null }> {
+    const dir = this.settings.paths.localModsDir
+    if (!dir) throw new Error('Set the local mods folder in Settings first')
+    // The DLL ships in resources/helper (inside the asar in the installed app; readFile handles that).
+    const { app } = await import('electron')
+    const created = await ensureContinueMod(dir, ['1.4', '1.5', '1.6', '1.7'], join(app.getAppPath(), 'resources', 'helper', CONTINUE_DLL))
+    if (created) await this.rescan(false)
+    return { created, state: created ? this.state() : null }
+  }
+
+  // The executable's name differs between game versions and platforms.
+  async gameExe(): Promise<string | null> {
+    const names = process.platform === 'win32' ? ['RimWorldWin64.exe', 'RimWorld.exe', 'RimWorldWin.exe'] : ['RimWorldLinux', 'RimWorld']
+    for (const n of names) if (await exists(join(this.settings.paths.gameDir, n))) return join(this.settings.paths.gameDir, n)
+    return null
+  }
+
+  /** Starts the game; with a save file, the Continue helper opens that save once loading is done. */
+  async launch(continueSave?: string): Promise<{ ok: boolean; message: string }> {
     const p = this.settings.paths
     await this.recordPlay().catch(() => {})
     if (this.settings.backupSaveOnLaunch) await backupNewestSave(p.configDir, this.instFile('save-backups'))
+    if (continueSave) await writeContinueRequest(p.configDir, continueSave)
+    else await clearContinueRequest(p.configDir)
     if (this.settings.launchViaSteam) {
       const { shell } = await import('electron')
       await shell.openExternal('steam://rungameid/294100' + (this.settings.launchArgs ? '//' + encodeURIComponent(this.settings.launchArgs) : ''))
       return { ok: true, message: 'Launching through Steam' }
     }
-    const exe = process.platform === 'win32' ? join(p.gameDir, 'RimWorldWin64.exe') : join(p.gameDir, 'RimWorldLinux')
-    try {
-      await stat(exe)
-    } catch {
-      return { ok: false, message: `Game executable not found: ${exe}` }
+    const exe = await this.gameExe()
+    if (!exe) {
+      await clearContinueRequest(p.configDir)
+      return { ok: false, message: `No RimWorld executable found in ${p.gameDir}` }
     }
     // Quote-aware so -savedatafolder="C:\My Games\RimWorld" stays one argument.
     const args = (this.settings.launchArgs.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []).map((a) => a.replace(/"/g, ''))
@@ -793,8 +821,14 @@ export class Service {
       child.once('spawn', () => resolve(null))
       child.once('error', (e) => resolve(e.message))
     })
-    if (started) return { ok: false, message: `RimWorld could not be started: ${started}` }
-    child.on('exit', () => this.emit({ type: 'game-exited' }))
+    if (started) {
+      await clearContinueRequest(p.configDir)
+      return { ok: false, message: `RimWorld could not be started: ${started}` }
+    }
+    child.on('exit', () => {
+      void clearContinueRequest(p.configDir)
+      this.emit({ type: 'game-exited' })
+    })
     child.unref()
     return { ok: true, message: 'RimWorld started' }
   }

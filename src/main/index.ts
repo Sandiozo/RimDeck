@@ -26,6 +26,8 @@ const API = [
   'analyze',
   'readLog',
   'launch',
+  'latestSave',
+  'prepareContinue',
   'readListFile',
   'writeListFile',
   'workshopCollection',

@@ -111,6 +111,8 @@ interface Store extends Derived {
   analyze(pids: string[]): Promise<void>
   toast(kind: Toast['kind'], text: string): void
   launch(): Promise<void>
+  /** Starts the game and opens this save (default: the newest) through the Continue helper mod. */
+  continueGame(saveFile?: string): Promise<void>
   startBisect(): void
   bisectAnswer(stillBroken: boolean): void
   stopBisect(restore: boolean): void
@@ -126,6 +128,9 @@ let toastId = 0
 
 // XML analysis feeds validation/sorting; kept here so every derive() call sees the latest report.
 let xmlReport: XmlReport | null = null
+// The helper mod behind the Continue button (see src/main/core/continue.ts).
+const CONTINUE_ID = 'rimdeck.continue'
+
 let xmlFor = ''
 let xmlTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -488,6 +493,27 @@ export const useStore = create<Store>((set, get) => {
       if (!same(s.active, s.saved) && !(await s.save())) return
       const r = await api.launch()
       get().toast(r.ok ? 'ok' : 'error', r.message)
+    },
+
+    async continueGame(saveFile) {
+      try {
+        const file = saveFile ?? (await api.latestSave())?.file
+        if (!file) return get().toast('error', 'No saves found for this install')
+        const { created, state } = await api.prepareContinue()
+        if (created && state) {
+          set({ app: state })
+          get().rederive()
+        }
+        // The helper has to be active to open the save; it waits at the end of the load order.
+        if (!get().active.includes(CONTINUE_ID)) commit([...get().active, CONTINUE_ID])
+        const s = get()
+        if (!same(s.active, s.saved) && !(await s.save())) return
+        const r = await api.launch(file)
+        const name = file.split(/[\\/]/).pop()!.replace(/\.rws$/i, '')
+        get().toast(r.ok ? 'ok' : 'error', r.ok ? `Starting RimWorld; “${name}” opens once the game has loaded` : r.message)
+      } catch (e: any) {
+        get().toast('error', e.message)
+      }
     },
 
     startBisect() {

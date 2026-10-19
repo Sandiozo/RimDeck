@@ -103,12 +103,11 @@ function SaveDetail({ save }: { save: SaveSummary }) {
     s.toast('ok', `Loaded ${save.modIds.length} mods from “${save.name}”. Review the list, then save.`)
   }
 
-  // RimWorld can't be told which save to open, so this sets up the mods and the player picks the save in the menu.
+  // Sets up the save's mods, then the Continue helper opens the save once the game has loaded.
   const play = async () => {
     if (missing.length && !confirm(`${missing.length} mod${missing.length === 1 ? '' : 's'} from this save ${missing.length === 1 ? 'is' : 'are'} not installed. Play anyway?`)) return
     s.setActive(save.modIds.map((id) => resolveInstalled(id) ?? id).filter((id) => s.installed.has(id)))
-    await s.launch()
-    s.toast('info', `Load “${save.name}” from the main menu once the game has started.`)
+    await s.continueGame(save.path)
   }
 
   const section = ({ title, ids, tone }: { title: string; ids: string[]; tone: string }) =>
@@ -159,8 +158,8 @@ function SaveDetail({ save }: { save: SaveSummary }) {
         <button className="btn primary" style={{ marginTop: 12, width: '100%', justifyContent: 'center' }} onClick={adopt}>
           Use this save's mod list
         </button>
-        <button className="btn play" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }} onClick={play} title="Switch to this save's mods, save, and start RimWorld">
-          <Play size={13} fill="currentColor" /> Play with this save's mods
+        <button className="btn play" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }} onClick={play} title="Switch to this save's mods, save, start RimWorld and open this save">
+          <Play size={13} fill="currentColor" /> Play this save
         </button>
         {!missing.length && !inactive.length && !extra.length && <p className="muted">Your current load order has exactly these mods.</p>}
         {missingSteam.length > 1 && (

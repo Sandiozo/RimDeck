@@ -484,6 +484,10 @@ a:hover {
   box-shadow: inset 0 2px 3px rgb(0 0 0 / 0.3);
   filter: brightness(0.96);
 }
+/* Continue sits next to Play: a plain plate with the play colour on its icon. */
+.btn.continue svg {
+  color: var(--play);
+}
 .btn.danger {
   color: var(--err);
 }
