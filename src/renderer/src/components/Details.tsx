@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { SlidersHorizontal, Copy, Cpu, Download, ExternalLink, FolderOpen, Link2, Minus, Plus, Tags, StickyNote, Paintbrush, ArrowRight, Check } from 'lucide-react'
+import { Gamepad2, Trash, SlidersHorizontal, Copy, Cpu, Download, ExternalLink, FolderOpen, Link2, Minus, Plus, Tags, StickyNote, Paintbrush, ArrowRight, Check } from 'lucide-react'
 import type { ModCategory } from '@shared/types'
 import { CATEGORY_LABEL, resolver } from '@shared/graph'
 import { categoryOf, useStore } from '../store'
 import { api, imgUrl, workshopUrl } from '../api'
 import { richText, TAG_COLORS, timeAgo } from '../lib'
 import { ModIcon, SeverityIcon } from './ui'
+import { removeLabel, removeMods, steamUrl } from '../removeMods'
 import { ModSettingsSection, openSettings, settingsFor, useSettingsFiles } from './SettingsEditor'
 
 export function IssueCard({ issue }: { issue: import('@shared/types').Issue }) {
@@ -161,8 +162,22 @@ export function Details() {
             </button>
           )}
           {mod?.workshopId && (
-            <button className="btn sm" onClick={() => api.openUrl(workshopUrl(mod.workshopId!))}>
+            <button className="btn sm" title="Open the Workshop page in your browser" onClick={() => api.openUrl(workshopUrl(mod.workshopId!))}>
               <ExternalLink size={13} /> Workshop
+            </button>
+          )}
+          {mod?.workshopId && (
+            <button className="btn sm" title="Open the Workshop page in the Steam app" onClick={() => api.openUrl(steamUrl(mod.workshopId!))}>
+              <Gamepad2 size={13} /> Open in Steam
+            </button>
+          )}
+          {removeLabel([pid]) && (
+            <button
+              className="btn sm ghost danger"
+              title={mod?.source === 'workshop' ? 'Unsubscribe on Steam; Steam then deletes the files' : 'Move this mod folder to the Recycle Bin'}
+              onClick={() => removeMods([pid])}
+            >
+              <Trash size={13} /> {removeLabel([pid])}
             </button>
           )}
           {mod?.url && !mod.url.includes('steamcommunity') && (

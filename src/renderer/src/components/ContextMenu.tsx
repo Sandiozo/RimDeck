@@ -1,12 +1,13 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { SlidersHorizontal, ArrowDownToLine, ArrowUpToLine, Copy, ExternalLink, EyeOff, Eye, FolderOpen, Minus, Plus } from 'lucide-react'
+import { Gamepad2, Trash, SlidersHorizontal, ArrowDownToLine, ArrowUpToLine, Copy, ExternalLink, EyeOff, Eye, FolderOpen, Minus, Plus } from 'lucide-react'
 import { categoryOf, useStore } from '../store'
 import { CATEGORY_LABEL } from '@shared/graph'
 import type { ModCategory } from '@shared/types'
 import { api, workshopUrl } from '../api'
 import { TAG_COLORS } from '../lib'
 import { openSettings, settingsFor, useSettingsFiles } from './SettingsEditor'
+import { removeLabel, removeMods, steamUrl } from '../removeMods'
 
 interface MenuState {
   open: { x: number; y: number; pid: string; kind: 'active' | 'inactive' } | null
@@ -44,10 +45,10 @@ export function ContextMenu() {
     useMenu.setState({ open: null })
   }
   const x = Math.min(open.x, window.innerWidth - 230)
-  const y = Math.min(open.y, window.innerHeight - 420)
+  const y = Math.max(8, Math.min(open.y, window.innerHeight - 520))
 
   return (
-    <div className="menu" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="menu" style={{ left: x, top: y, maxHeight: window.innerHeight - 16, overflowY: 'auto' }} onMouseDown={(e) => e.stopPropagation()}>
       {open.kind === 'inactive' ? (
         <button onClick={run(() => s.activate(ids))}>
           <Plus size={14} /> Activate{multi ? ` ${ids.length} mods` : ''}
@@ -79,6 +80,11 @@ export function ContextMenu() {
       {mod?.workshopId && (
         <button onClick={run(() => api.openUrl(workshopUrl(mod.workshopId!)))}>
           <ExternalLink size={14} /> Workshop page
+        </button>
+      )}
+      {mod?.workshopId && (
+        <button onClick={run(() => api.openUrl(steamUrl(mod.workshopId!)))}>
+          <Gamepad2 size={14} /> Open in Steam
         </button>
       )}
       <button onClick={run(() => navigator.clipboard.writeText(ids.join('\n')))}>
@@ -121,6 +127,14 @@ export function ContextMenu() {
           </span>
         )}
       </div>
+      {removeLabel(ids) && (
+        <>
+          <hr />
+          <button className="danger-item" onClick={run(() => void removeMods(ids))}>
+            <Trash size={14} /> {removeLabel(ids)}…
+          </button>
+        </>
+      )}
       <hr />
       <div className="swatches" style={{ padding: '4px 8px 6px' }}>
         <span className="swatch none" title="No color" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], color: undefined })))}>

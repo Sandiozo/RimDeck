@@ -45,6 +45,7 @@ import { extractDefData } from './core/defdata.ts'
 import { isGameRunning, matchSettingsFiles, moveToBackup, readSettings, resetSettings, writeSettings } from './core/modsettings.ts'
 import { isSlowXpath, mediaStats, score, startupFromLog } from './core/loadtime.ts'
 import { ensurePicksMod, listPicks, pickTexture, PICKS_ID, unpickTexture } from './core/texturepicks.ts'
+import { steamWorkshop, type SteamJobResult } from './core/steamclient.ts'
 import { buildXmlReport, indexModXml, searchXml, type ModXml } from './core/xmlindex.ts'
 import { DownloadQueue, SteamCmd } from './core/steamcmd.ts'
 import { readJson, writeJson } from './core/store.ts'
@@ -453,6 +454,39 @@ export class Service {
     const log = await findPlayerLog(this.settings.paths.configDir)
     const startup = log ? await startupFromLog(log) : undefined
     return { mods: costs.sort((a, b) => b.score - a.score), startup, ms: Math.round(performance.now() - t) }
+  }
+
+  // Local mods go to the Recycle Bin (restorable). Only folders directly inside the local mods folder qualify.
+  async trashMods(packageIds: string[]): Promise<{ trashed: string[]; skipped: string[] }> {
+    const { shell } = await import('electron')
+    const root = this.settings.paths.localModsDir
+    const trashed: string[] = []
+    const skipped: string[] = []
+    for (const m of this.mods.filter((x) => packageIds.includes(x.packageId))) {
+      const rel = root ? relative(root, m.path) : ''
+      if (m.source !== 'local' || !rel || rel.startsWith('..') || isAbsolute(rel) || /[\\/]/.test(rel)) {
+        skipped.push(m.packageId)
+        continue
+      }
+      try {
+        await shell.trashItem(m.path)
+        trashed.push(m.packageId)
+      } catch {
+        skipped.push(m.packageId)
+      }
+    }
+    if (trashed.length) await this.rescan(false)
+    return { trashed, skipped }
+  }
+
+  // Workshop mods are unsubscribed through the Steam client, which then deletes their files.
+  async unsubscribeMods(packageIds: string[]): Promise<SteamJobResult & { packageIds: string[] }> {
+    const mods = this.mods.filter((m) => m.source === 'workshop' && m.workshopId && packageIds.includes(m.packageId))
+    const result = await steamWorkshop('unsubscribe', mods.map((m) => m.workshopId!), this.file('steam'))
+    const done = new Set(result.done)
+    // Steam removes the folders a few seconds after the helper exits; the folder watcher picks that up too.
+    if (done.size) setTimeout(() => this.rescan().catch(() => {}), 6000)
+    return { ...result, packageIds: mods.filter((m) => done.has(m.workshopId!)).map((m) => m.packageId) }
   }
 
   async texturePicks() {

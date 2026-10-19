@@ -2071,3 +2071,10 @@ textarea.input {
   color: var(--text-2);
   border: 1px solid var(--line-2);
 }
+
+.menu button.danger-item {
+  color: var(--err);
+}
+.menu button.danger-item:hover {
+  background: var(--err-soft);
+}
