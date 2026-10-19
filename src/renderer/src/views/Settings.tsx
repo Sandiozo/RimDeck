@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { FolderOpen, RefreshCw, Download, WandSparkles, Search, SlidersHorizontal } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { FolderOpen, RefreshCw, Download, WandSparkles } from 'lucide-react'
 import type { Paths, SortMode, UpdateState } from '@shared/types'
 import { useStore } from '../store'
 import { api, onEvent } from '../api'
 import { Seg, Toggle } from '../components/ui'
-import { bytes, timeAgo } from '../lib'
-import { openSettings, useSettingsFiles } from '../components/SettingsEditor'
-import { ModIcon } from '../components/ui'
+import { timeAgo } from '../lib'
 import { InstallsPanel } from '../components/Installs'
 
 const ACCENTS = ['#7c8cff', '#b58cff', '#4fd1c5', '#3ecf8e', '#f5b544', '#ff7a90', '#5aa9ff']
@@ -186,10 +184,6 @@ export function SettingsView() {
         </div>
       </div>
 
-      <ConfigureMods />
-
-      <OrphanSettings />
-
       <AboutPanel />
 
       <div className="panel">
@@ -241,67 +235,6 @@ export function SettingsView() {
   )
 }
 
-// Settings files left behind by mods that are no longer installed.
-function OrphanSettings() {
-  const s = useStore()
-  const { files, load } = useSettingsFiles()
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    if (!files) void load()
-  }, [])
-  if (!files) return null
-  const orphans = files.filter((f) => !f.folder)
-  const size = orphans.reduce((n, f) => n + f.size, 0)
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3 className="grow">Mod settings files</h3>
-        <span className="dim" style={{ fontSize: 12 }}>
-          {files.length} files · {orphans.length} from mods that are not installed ({bytes(size)})
-        </span>
-      </div>
-      <div className="setting">
-        <div className="label">
-          <b>Leftover settings</b>
-          <span>Moved into RimDeck's backup folder, not deleted. Edit a mod's own settings from its details panel.</span>
-        </div>
-        <button className="btn sm" disabled={!orphans.length} onClick={() => setOpen(!open)}>
-          {open ? 'Hide list' : 'Show list'}
-        </button>
-        <button
-          className="btn"
-          disabled={!orphans.length}
-          onClick={async () => {
-            if (!confirm(`Move ${orphans.length} leftover settings files to RimDeck's backups?`)) return
-            try {
-              const n = await api.archiveSettings(orphans.map((f) => f.path))
-              s.toast('ok', `Moved ${n} leftover settings files to backups`)
-              void load()
-            } catch (e: any) {
-              s.toast('error', e.message)
-            }
-          }}
-        >
-          Clean up {orphans.length}
-        </button>
-      </div>
-      {open && (
-        <div className="panel-body" style={{ maxHeight: 260, overflow: 'auto', paddingTop: 0 }}>
-          {orphans.map((f) => (
-            <div key={f.path} className="d-item">
-              <span className="grow mono ellipsis" style={{ fontSize: 11.5 }}>
-                {f.name}
-              </span>
-              <span className="dim" style={{ fontSize: 11 }}>
-                {bytes(f.size)} · {timeAgo(f.mtime)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function AboutPanel() {
   const [state, setState] = useState<UpdateState | null>(null)
@@ -358,51 +291,3 @@ function AboutPanel() {
   )
 }
 
-// Every installed mod that has saved settings, with a shortcut into the editor.
-function ConfigureMods() {
-  const s = useStore()
-  const { files, load } = useSettingsFiles()
-  const [q, setQ] = useState('')
-  useEffect(() => {
-    if (!files) void load()
-  }, [])
-  const rows = useMemo(() => {
-    const byFolder = new Map((s.app?.mods ?? []).filter((m) => m.source === 'local' || m.source === 'workshop').map((m) => [m.folder.toLowerCase(), m]))
-    const t = q.trim().toLowerCase()
-    return (files ?? [])
-      .filter((f) => f.folder)
-      .map((f) => ({ f, mod: byFolder.get(f.folder!.toLowerCase()) }))
-      .filter((r) => !t || (r.mod?.name ?? r.f.name).toLowerCase().includes(t))
-      .sort((a, b) => Number(!s.active.includes(a.mod?.packageId ?? '')) - Number(!s.active.includes(b.mod?.packageId ?? '')) || (a.mod?.name ?? '').localeCompare(b.mod?.name ?? ''))
-  }, [files, q, s.app, s.active])
-  if (!files) return null
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3 className="grow">Configure mods</h3>
-        <label className="pane-filter" style={{ margin: 0, width: 240 }}>
-          <Search size={13} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a mod…" />
-        </label>
-      </div>
-      <p className="dim" style={{ margin: '10px 14px 4px', fontSize: 12 }}>
-        Mods with saved settings, active ones first. A mod appears here after its options have been changed in game at least once. You can also right-click a mod and choose Configure mod settings.
-      </p>
-      <div className="panel-body" style={{ maxHeight: 320, overflow: 'auto', paddingTop: 4 }}>
-        {rows.map(({ f, mod }) => (
-          <div key={f.path} className="d-item">
-            <ModIcon mod={mod} size={18} />
-            <span className={'grow ellipsis' + (mod && !s.active.includes(mod.packageId) ? ' dim' : '')} style={{ fontWeight: 560 }}>
-              {mod?.name ?? f.folder}
-            </span>
-            <span className="mono dim" style={{ fontSize: 11 }}>{f.className}</span>
-            <button className="btn sm" onClick={() => openSettings(f.path)}>
-              <SlidersHorizontal size={12} /> Configure
-            </button>
-          </div>
-        ))}
-        {!rows.length && <div className="empty">No saved mod settings{q ? ' match' : ''}.</div>}
-      </div>
-    </div>
-  )
-}

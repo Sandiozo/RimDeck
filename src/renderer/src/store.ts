@@ -21,7 +21,7 @@ import { validate } from '@shared/validate'
 import { baseId, isTop, OFFICIAL_ORDER, resolver } from '@shared/graph'
 import { api } from './api'
 
-export type View = 'mods' | 'problems' | 'saves' | 'logs' | 'textures' | 'search' | 'performance' | 'research' | 'items' | 'lists' | 'downloads' | 'settings'
+export type View = 'mods' | 'problems' | 'saves' | 'logs' | 'textures' | 'search' | 'performance' | 'research' | 'items' | 'modsettings' | 'lists' | 'downloads' | 'settings'
 
 export interface Toast {
   id: number

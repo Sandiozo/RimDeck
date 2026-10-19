@@ -24,6 +24,7 @@ import {
   RotateCcw,
   Image as ImageIcon,
   Gauge,
+  SlidersHorizontal,
   FlaskConical,
   Boxes,
 } from 'lucide-react'
@@ -126,6 +127,7 @@ export function Palette() {
     { id: 'v-problems', label: 'Go to Problems', icon: <CircleAlert size={15} />, run: go('problems'), group: 'Commands' },
     { id: 'v-saves', label: 'Go to Saves', icon: <Gamepad2 size={15} />, run: go('saves'), group: 'Commands' },
     { id: 'v-logs', label: 'Go to Game log', icon: <ScrollText size={15} />, run: go('logs'), group: 'Commands' },
+    { id: 'v-modsettings', label: 'Go to Mod settings', icon: <SlidersHorizontal size={15} />, run: go('modsettings'), group: 'Commands' },
     { id: 'v-research', label: 'Go to Research tree', icon: <FlaskConical size={15} />, run: go('research'), group: 'Commands' },
     { id: 'v-items', label: 'Go to Items', icon: <Boxes size={15} />, run: go('items'), group: 'Commands' },
     { id: 'v-perf', label: 'Go to Load time', icon: <Gauge size={15} />, run: go('performance'), group: 'Commands' },

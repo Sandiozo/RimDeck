@@ -12,6 +12,7 @@ import {
   Search,
   Settings,
   UserRound,
+  SlidersHorizontal,
   Image as ImageIcon,
   FileSearch,
   Gauge,
@@ -41,6 +42,7 @@ import { TexturesView } from './views/Textures'
 import { SearchView } from './views/Search'
 import { PerformanceView } from './views/Performance'
 import { ResearchView } from './views/Research'
+import { ModSettingsView } from './views/ModSettings'
 import { ItemsView } from './views/Items'
 import { ChangesBanner } from './components/Changes'
 import { SettingsEditor } from './components/SettingsEditor'
@@ -49,6 +51,7 @@ import { ProfileSwitcher } from './components/ProfileSwitcher'
 const NAV: [View, string, typeof LayoutGrid][] = [
   ['mods', 'Mods', LayoutGrid],
   ['problems', 'Problems', CircleAlert],
+  ['modsettings', 'Mod settings', SlidersHorizontal],
   ['saves', 'Saves', Gamepad2],
   ['logs', 'Game log', ScrollText],
   ['textures', 'Texture conflicts', ImageIcon],
@@ -245,6 +248,7 @@ export function App() {
         {s.view === 'search' && <SearchView />}
         {s.view === 'performance' && <PerformanceView />}
         {s.view === 'research' && <ResearchView />}
+        {s.view === 'modsettings' && <ModSettingsView />}
         {s.view === 'items' && <ItemsView />}
         {s.view === 'lists' && <ListsView />}
         {s.view === 'downloads' && <DownloadsView />}
