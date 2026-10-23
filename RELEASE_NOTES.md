@@ -1,11 +1,8 @@
-## RimDeck 1.2.0
+## RimDeck 1.2.1
 
-### macOS and Linux
-- **RimDeck now runs on macOS and Linux.** Download the `.dmg` for Apple Silicon or Intel Macs, or the `.AppImage` or `.deb` for Linux, from this release.
-- RimDeck finds Steam, RimWorld and RimSort on each system, including Flatpak Steam on Linux and the game inside `RimWorldMac.app` on macOS.
-- macOS uses its own window buttons, and shortcuts show the ⌘ keys.
-- Updates: Windows and the Linux AppImage install them automatically. On macOS RimDeck tells you about a new version and opens the download, because Mac apps that aren't code-signed can't update themselves.
-- RimDeck isn't code-signed yet. On macOS, if it says the app can't be opened, use **System Settings → Privacy & Security → Open Anyway**.
+### Fixes
+- **No more freezes while mod DLLs are read.** Listing mod settings and analysing Harmony patches read several hundred mod DLLs in one go, which could make the window stop responding for a while, especially right after a restart, when nothing was cached yet. They're now read in the background.
+- **Save backups no longer pile up.** Starting the game backs up your newest save as before, but only when it changed since the last backup, and only the newest 10 backups are kept (saves are often 50 MB or more).
 
-### RimWorld 1.6
-- RimWorld 1.6 is treated as the main version: when the game's version can't be read, RimDeck now assumes 1.6 rather than the 1.7 alpha. Everything (sorting, problem checks, mod settings, Continue) works the same on 1.6 and 1.7.
+### Diagnostics
+- If RimDeck ever stops responding, it now notes when, for how long and what it was doing in `logs/responsiveness.log` in its data folder (`%APPDATA%\RimDeck` on Windows), so the cause can be found.

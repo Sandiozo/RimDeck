@@ -8,6 +8,7 @@ import type { AppEvent } from '../shared/types.ts'
 import { Service } from './service.ts'
 import * as updater from './updater.ts'
 import { captureScreenshots } from './screenshots.ts'
+import { logInterfaceStall, track, watchResponsiveness } from './responsiveness.ts'
 import { decodeDds } from './core/dds.ts'
 
 const API = [
@@ -86,6 +87,8 @@ function emit(e: AppEvent) {
 
 // Shell / dialog helpers live here because they need Electron; everything else is in Service.
 const native = {
+  /** The interface reports its long tasks for the responsiveness log. */
+  logInterfaceStall: (ms: number, where: string) => logInterfaceStall(ms, where),
   updateState: () => updater.getState(),
   updateCheck: () => updater.check(),
   updateInstall: () => updater.install(),
@@ -115,12 +118,17 @@ const native = {
 }
 
 async function call(method: string, args: unknown[]): Promise<unknown> {
-  if ((API as readonly string[]).includes(method)) {
-    await ready()
-    return (service as any)[method](...args)
+  const done = track(method)
+  try {
+    if ((API as readonly string[]).includes(method)) {
+      await ready()
+      return await (service as any)[method](...args)
+    }
+    if (method in native) return await (native as any)[method](...args)
+    throw new Error(`Unknown method ${method}`)
+  } finally {
+    done()
   }
-  if (method in native) return (native as any)[method](...args)
-  throw new Error(`Unknown method ${method}`)
 }
 
 // Thumbnails are resized once and cached on disk; full images are streamed as-is.
@@ -222,6 +230,7 @@ function createWindow() {
       sandbox: true,
     },
   })
+  watchResponsiveness(win, app.getPath('userData'))
   win.once('ready-to-show', () => {
     win?.show()
     if (process.env.RD_SCREENSHOTS)
@@ -241,11 +250,14 @@ function createWindow() {
 app.whenReady().then(async () => {
   protocol.handle('rdimg', async (req) => {
     const url = new URL(req.url)
+    const done = track('image')
     try {
       const { data, type } = await image(url.searchParams.get('p') ?? '', Number(url.searchParams.get('w') ?? 0))
       return new Response(new Uint8Array(data), { headers: { 'content-type': type, 'access-control-allow-origin': '*' } })
     } catch {
       return new Response(null, { status: 404 })
+    } finally {
+      done()
     }
   })
   service = new Service(app.getPath('userData'), emit)

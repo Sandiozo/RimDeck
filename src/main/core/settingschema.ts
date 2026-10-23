@@ -4,7 +4,7 @@
 // Scribe_Deep and Scribe.EnterNode calls, including ones made through the mod's own helper
 // methods), and the Mod class's DoSettingsWindowContents says how the game window labels each
 // field. Nothing is loaded or executed; the IL is only read.
-import { readFileSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import {
   type Md,
   OPERAND,
@@ -36,12 +36,18 @@ export type EnumResolver = (fullName: string) => [number, string][] | null
 
 const cache = new Map<string, { mtime: number; info: AssemblySettings | null }>()
 
-export function readAssemblySettings(file: string, mtime: number, resolveEnum?: EnumResolver): AssemblySettings | null {
+/** Settings found in an assembly, cached by file time. Null when it isn't cached yet. */
+export function cachedAssemblySettings(file: string, mtime: number): AssemblySettings | null | undefined {
   const hit = cache.get(file)
-  if (hit && hit.mtime === mtime) return hit.info
+  return hit && hit.mtime === mtime ? hit.info : undefined
+}
+
+export async function readAssemblySettings(file: string, mtime: number, resolveEnum?: EnumResolver): Promise<AssemblySettings | null> {
+  const hit = cachedAssemblySettings(file, mtime)
+  if (hit !== undefined) return hit
   let info: AssemblySettings | null = null
   try {
-    const md = openMetadata(readFileSync(file))
+    const md = openMetadata(await readFile(file))
     info = md ? scan(md, resolveEnum) : null
   } catch {
     info = null
@@ -50,17 +56,29 @@ export function readAssemblySettings(file: string, mtime: number, resolveEnum?: 
   return info
 }
 
-const opened = new Map<string, Md | null>()
+// The game's own assembly is large (15 MB on 1.7), so it is opened once per file version.
+const gameAssemblies = new Map<string, { mtime: number; md: Md | null }>()
 
-/** Enum members of a type defined in this file, for resolving enums used by other assemblies. */
-export function enumMembersIn(file: string, fullName: string): [number, string][] | null {
+/** Opens an assembly for enum lookups; the game's assembly is kept open, a mod's is not. */
+export async function openForEnums(file: string, keep = false): Promise<Md | null> {
   try {
-    if (!opened.has(file)) opened.set(file, openMetadata(readFileSync(file)))
-    const md = opened.get(file)
-    if (!md) return null
+    const mtime = (await stat(file)).mtimeMs
+    const hit = gameAssemblies.get(file)
+    if (hit && hit.mtime === mtime) return hit.md
+    const md = openMetadata(await readFile(file))
+    if (keep) gameAssemblies.set(file, { mtime, md })
+    return md
+  } catch {
+    return null
+  }
+}
+
+/** Enum members of a type defined in this assembly, for resolving enums used by other assemblies. */
+export function enumMembersIn(md: Md, fullName: string): [number, string][] | null {
+  try {
     for (let r = 1; r <= md.rows[TYPEDEF]; r++) if (typeDefName(md, r) === fullName) return enumMembers(md, r)
   } catch {
-    // unreadable assembly
+    // malformed assembly
   }
   return null
 }

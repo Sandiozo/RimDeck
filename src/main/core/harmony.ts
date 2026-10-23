@@ -1,7 +1,7 @@
 // Read-only ECMA-335 metadata reader: assembly identity, references, namespaces and
 // Harmony patches (attribute-declared, plus best-effort manual Harmony.Patch calls).
 // Nothing is ever loaded or executed; any malformed input yields null.
-import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 
 export type PatchKind = 'prefix' | 'postfix' | 'transpiler' | 'finalizer' | 'manual' | 'unknown'
 
@@ -21,9 +21,9 @@ export interface AssemblyInfo {
   usesHarmony: boolean
 }
 
-export function readAssembly(filePath: string): AssemblyInfo | null {
+export async function readAssembly(filePath: string): Promise<AssemblyInfo | null> {
   try {
-    return readAssemblyBuffer(readFileSync(filePath))
+    return readAssemblyBuffer(await readFile(filePath))
   } catch {
     return null
   }

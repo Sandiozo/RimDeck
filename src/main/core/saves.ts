@@ -1,4 +1,4 @@
-import { copyFile, mkdir, open, readdir, stat } from 'node:fs/promises'
+import { copyFile, mkdir, open, readdir, rm, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { SaveSummary } from '../../shared/types.ts'
 import { parseXml, strList, text } from './xml.ts'
@@ -65,10 +65,30 @@ export async function backupNewestSave(configDir: string, backupDir: string): Pr
     }
     if (!newest) return null
     await mkdir(backupDir, { recursive: true })
+    // A copy keeps the save's file time, so a backup with the same name and time is the same save:
+    // launching again without having saved in between doesn't copy it again.
+    const existing = (await readdir(backupDir)).filter((b) => b.toLowerCase().endsWith('.rws'))
+    for (const b of existing) {
+      if (!b.endsWith(`-${newest.f}`)) continue
+      const st = await stat(join(backupDir, b)).catch(() => null)
+      if (st && Math.abs(st.mtimeMs - newest.t) < 2) return join(backupDir, b)
+    }
     const dest = join(backupDir, `${new Date().toISOString().slice(0, 10)}-${newest.f}`)
     await copyFile(join(dir, newest.f), dest)
+    await pruneSaveBackups(backupDir, 10)
     return dest
   } catch {
     return null
   }
+}
+
+// Saves are large (often 50 MB or more), so only the newest few backups are kept.
+async function pruneSaveBackups(dir: string, keep: number) {
+  const files = await Promise.all(
+    (await readdir(dir))
+      .filter((f) => f.toLowerCase().endsWith('.rws'))
+      .map(async (f) => ({ f, t: (await stat(join(dir, f)).catch(() => null))?.mtimeMs ?? 0 })),
+  )
+  files.sort((a, b) => b.t - a.t)
+  for (const { f } of files.slice(keep)) await rm(join(dir, f), { force: true }).catch(() => {})
 }

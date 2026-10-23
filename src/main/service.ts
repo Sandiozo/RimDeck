@@ -35,7 +35,7 @@ import type {
   WorkshopUpdate,
 } from '../shared/types.ts'
 import { effectiveDirs, OFFICIAL_ORDER } from '../shared/graph.ts'
-import { readAssembly, type AssemblyInfo } from './core/harmony.ts'
+import { readAssembly, type AssemblyInfo, type Md } from './core/harmony.ts'
 import { findPlayerLog, parsePlayerLog, type Attribution } from './core/logs.ts'
 import { listBackups, readModListFile, readModsConfig, serializeModsConfig, writeModsConfig } from './core/modsconfig.ts'
 import { defaultConfigDir, detectPaths, gameRoot, majorOf, readGameVersion, validatePaths } from './core/paths.ts'
@@ -46,7 +46,7 @@ import { scanAll } from './core/scanner.ts'
 import { textureLookup, textureReport } from './core/textures.ts'
 import { extractDefData } from './core/defdata.ts'
 import { isGameRunning, matchSettingsFiles, moveToBackup, readSettings, resetSettings, writeSettings } from './core/modsettings.ts'
-import { enumMembersIn, readAssemblySettings, type AssemblySettings } from './core/settingschema.ts'
+import { cachedAssemblySettings, enumMembersIn, openForEnums, readAssemblySettings, type AssemblySettings } from './core/settingschema.ts'
 import { isSlowXpath, mediaStats, score, startupFromLog } from './core/loadtime.ts'
 import { ensurePicksMod, listPicks, pickTexture, PICKS_ID, unpickTexture } from './core/texturepicks.ts'
 import { clearContinueRequest, CONTINUE_DLL, ensureContinueMod, latestSave, writeContinueRequest } from './core/continue.ts'
@@ -444,11 +444,11 @@ export class Service {
     await writeFile(file, serializeModsConfig(this.gameVersion, ids, []), 'utf8')
   }
 
-  analyzeMod(m: ModInfo): ModAssemblyReport {
+  async analyzeMod(m: ModInfo): Promise<ModAssemblyReport> {
     const report: ModAssemblyReport = { packageId: m.packageId, dlls: [], patches: [], namespaces: [], usesHarmony: false }
     for (const dll of m.assemblies) {
       const cached = this.asmCache.get(dll)
-      const info = cached && cached.mtime === m.mtime ? cached.info : readAssembly(dll)
+      const info = cached && cached.mtime === m.mtime ? cached.info : await readAssembly(dll)
       if (cached?.info !== info || cached?.mtime !== m.mtime) this.asmCache.set(dll, { mtime: m.mtime, info })
       if (!info) continue
       report.dlls.push({ file: basename(dll), name: info.name, version: info.version, references: info.references })
@@ -462,7 +462,7 @@ export class Service {
 
   async analyze(packageIds: string[]): Promise<ModAssemblyReport[]> {
     const want = new Set(packageIds)
-    return this.mods.filter((m) => want.has(m.packageId)).map((m) => this.analyzeMod(m))
+    return Promise.all(this.mods.filter((m) => want.has(m.packageId)).map((m) => this.analyzeMod(m)))
   }
 
   // Same rule as the renderer: a local copy wins over a Workshop copy with the same packageId.
@@ -519,7 +519,7 @@ export class Service {
           defs: x.defs.length,
           patches: x.patches.length,
           slowPatches: x.patches.filter((p) => isSlowXpath(p.xpath)).length,
-          harmonyPatches: m.hasAssemblies ? this.analyzeMod(m).patches.length : 0,
+          harmonyPatches: m.hasAssemblies ? (await this.analyzeMod(m)).patches.length : 0,
         }
         return { packageId: m.packageId, ...base, score: score(base) } as ModCost
       }),
@@ -619,7 +619,7 @@ export class Service {
       a.packageIds.add(m.packageId)
       a.names.set(m.name.toLowerCase(), m.packageId)
       if (m.source === 'core' || m.source === 'dlc' || m.packageId === 'brrainz.harmony') continue
-      for (const ns of this.analyzeMod(m).namespaces) if (!a.namespaces.has(ns)) a.namespaces.set(ns, m.packageId)
+      for (const ns of (await this.analyzeMod(m)).namespaces) if (!a.namespaces.has(ns)) a.namespaces.set(ns, m.packageId)
     }
     return parsePlayerLog(file, a)
   }
@@ -642,7 +642,7 @@ export class Service {
     const candidates = new Map<string, { m: ModInfo; name: string; modClass: string; saved: boolean }[]>()
     for (const m of mods) {
       if (!m.assemblies.length) continue
-      const info = this.settingsInfo(m)
+      const info = await this.settingsInfo(m)
       for (const { modClass, settingsClass } of info.mods) {
         if (!info.schemas[settingsClass]?.length) continue
         const name = `Mod_${m.folder}_${modClass}.xml`
@@ -665,20 +665,27 @@ export class Service {
   }
 
   // Settings declared in a mod's code, merged over the DLLs that load for the current game version.
-  settingsInfo(m: ModInfo): AssemblySettings {
+  async settingsInfo(m: ModInfo): Promise<AssemblySettings> {
     const out: AssemblySettings = { mods: [], schemas: {} }
-    // 1.7 keeps the game code next to the executable; Unity versions keep it under *_Data/Managed.
-    const g = this.settings.paths.gameDir
-    const game = ['', 'RimWorldWin64_Data/Managed', 'RimWorldLinux_Data/Managed', 'Contents/Resources/Data/Managed'].map((d) => join(g, d, 'Assembly-CSharp.dll'))
+    // Enums can come from the game or from another DLL of the same mod. Those are opened before
+    // reading, and only when something isn't cached, so reading never waits on the disk.
+    let sources: Md[] = []
+    if (m.assemblies.some((dll) => cachedAssemblySettings(dll, m.mtime) === undefined)) {
+      // 1.7 keeps the game code next to the executable; Unity versions keep it under *_Data/Managed.
+      const g = this.settings.paths.gameDir
+      const game = ['', 'RimWorldWin64_Data/Managed', 'RimWorldLinux_Data/Managed', 'Contents/Resources/Data/Managed'].map((d) => join(g, d, 'Assembly-CSharp.dll'))
+      const opened = await Promise.all([...m.assemblies.map((f) => openForEnums(f)), ...game.map((f) => openForEnums(f, true))])
+      sources = opened.filter((md): md is Md => !!md)
+    }
     const resolveEnum = (name: string) => {
-      for (const f of [...m.assemblies, ...game]) {
-        const r = enumMembersIn(f, name)
+      for (const md of sources) {
+        const r = enumMembersIn(md, name)
         if (r) return r
       }
       return null
     }
     for (const dll of m.assemblies) {
-      const info = readAssemblySettings(dll, m.mtime, resolveEnum)
+      const info = await readAssemblySettings(dll, m.mtime, resolveEnum)
       if (!info) continue
       out.mods.push(...info.mods)
       Object.assign(out.schemas, info.schemas)
@@ -693,7 +700,7 @@ export class Service {
       .filter((x) => (x.source === 'local' || x.source === 'workshop') && name.startsWith(`mod_${x.folder.toLowerCase()}_`))
       .sort((a, b) => b.folder.length - a.folder.length)[0]
     if (!m) return null
-    const info = this.settingsInfo(m)
+    const info = await this.settingsInfo(m)
     let cls: string | undefined
     try {
       cls = (await readSettings(file)).children?.find((c) => c.tag === 'ModSettings')?.attrs?.Class

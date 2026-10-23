@@ -109,6 +109,7 @@ export const api = {
   pickOpenFile: (title: string, ext: string[]): Promise<string | null> => invoke('pickOpenFile', title, ext),
   pickSaveFile: (title: string, name: string): Promise<string | null> => invoke('pickSaveFile', title, name),
   setTitleBarColor: (bg: string, fg: string): Promise<void> => invoke('setTitleBarColor', bg, fg),
+  logInterfaceStall: (ms: number, where: string): Promise<void> => invoke('logInterfaceStall', ms, where),
   updateState: (): Promise<UpdateState> => invoke('updateState'),
   updateCheck: (): Promise<UpdateState> => invoke('updateCheck'),
   updateInstall: (): Promise<void> => invoke('updateInstall'),
