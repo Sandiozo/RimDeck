@@ -50,12 +50,20 @@ export function CollectionPanel() {
   const missing = rows.filter((r) => r.status === 'missing').map((r) => r.d.workshopId)
   const newSinceApply = s.collectionApplied ? rows.filter((r) => r.mod && !s.collectionApplied!.includes(r.d.workshopId)).length : 0
 
+  const loadingRef = useRef(false)
   const load = async () => {
+    // Enter in the field works even while the button is disabled, so guard here too.
+    if (loadingRef.current) return
     const id = parseWorkshopIds(input)[0]
     if (!id) return s.toast('error', 'Paste a collection link or ID')
+    loadingRef.current = true
     setLoading(true)
-    await s.loadCollection(id)
-    setLoading(false)
+    try {
+      await s.loadCollection(id)
+    } finally {
+      loadingRef.current = false
+      setLoading(false)
+    }
   }
 
   if (!c)
@@ -148,7 +156,7 @@ export function CollectionPanel() {
                 <td className="mono muted" style={{ width: 80 }}>{d.size ? bytes(d.size) : ''}</td>
                 <td style={{ width: 1, whiteSpace: 'nowrap', textAlign: 'right' }}>
                   {status === 'missing' && (
-                    <button className="btn sm" onClick={() => s.download([d.workshopId])}>
+                    <button className="btn sm" title="Download" aria-label="Download" onClick={() => s.download([d.workshopId])}>
                       <Download size={11} />
                     </button>
                   )}

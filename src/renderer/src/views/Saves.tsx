@@ -20,11 +20,12 @@ export function SavesView() {
     load()
   }, [])
 
+  // Ids are lowercase on both sides already; the resolvers also match RimWorld's `_steam` suffix.
   const resolveInstalled = useMemo(() => resolver(s.installed.keys()), [s.installed])
+  const resolveActive = useMemo(() => resolver(s.active), [s.active])
   const status = (save: SaveSummary) => {
     const missing = save.modIds.filter((id) => !resolveInstalled(id))
-    const active = new Set(s.active)
-    const differs = save.modIds.length !== s.active.length || save.modIds.some((id) => !active.has(id))
+    const differs = save.modIds.length !== s.active.length || save.modIds.some((id) => !resolveActive(id))
     return { missing, differs }
   }
   const current = saves?.find((x) => x.path === sel) ?? null
@@ -81,7 +82,7 @@ export function SavesView() {
           {saves && !saves.length && <div className="empty">No saves found.</div>}
           {!saves && <div className="empty">Reading saves…</div>}
         </div>
-        {current && <SaveDetail save={current} />}
+        {current && <SaveDetail key={current.path} save={current} />}
       </div>
     </div>
   )
@@ -89,12 +90,14 @@ export function SavesView() {
 
 function SaveDetail({ save }: { save: SaveSummary }) {
   const s = useStore()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Ids are lowercase on both sides already; the resolvers also match RimWorld's `_steam` suffix.
   const resolveInstalled = resolver(s.installed.keys())
-  const active = new Set(s.active)
-  const saveSet = new Set(save.modIds)
+  const resolveActive = resolver(s.active)
+  const resolveSave = resolver(save.modIds)
   const missing = save.modIds.map((id, i) => ({ id, i })).filter(({ id }) => !resolveInstalled(id))
-  const inactive = save.modIds.filter((id) => resolveInstalled(id) && !active.has(resolveInstalled(id)!))
-  const extra = s.active.filter((id) => !saveSet.has(id))
+  const inactive = save.modIds.filter((id) => resolveInstalled(id) && !resolveActive(id))
+  const extra = s.active.filter((id) => !resolveSave(id))
   const missingSteam = [...new Set(missing.map(({ i }) => save.modSteamIds[i]).filter((id) => id && id !== '0'))]
 
   const adopt = () => {
@@ -105,18 +108,20 @@ function SaveDetail({ save }: { save: SaveSummary }) {
 
   // Sets up the save's mods, then the Continue helper opens the save once the game has loaded.
   const play = async () => {
+    if (useStore.getState().launching) return
     if (missing.length && !confirm(`${missing.length} mod${missing.length === 1 ? '' : 's'} from this save ${missing.length === 1 ? 'is' : 'are'} not installed. Play anyway?`)) return
     s.setActive(save.modIds.map((id) => resolveInstalled(id) ?? id).filter((id) => s.installed.has(id)))
     await s.continueGame(save.path)
   }
 
+  // Long lists show the first 60 until asked for the rest.
   const section = ({ title, ids, tone }: { title: string; ids: string[]; tone: string }) =>
     ids.length ? (
       <div className="d-section">
         <h4>
           {title} <span className={'chip ' + tone}>{ids.length}</span>
         </h4>
-        {ids.slice(0, 60).map((id) => {
+        {(expanded.has(title) ? ids : ids.slice(0, 60)).map((id) => {
           const m = s.installed.get(resolveInstalled(id) ?? id)?.[0]
           const idx = save.modIds.indexOf(id)
           const steam = idx >= 0 ? save.modSteamIds[idx] : undefined
@@ -137,6 +142,11 @@ function SaveDetail({ save }: { save: SaveSummary }) {
             </div>
           )
         })}
+        {ids.length > 60 && !expanded.has(title) && (
+          <button className="btn ghost sm" style={{ marginTop: 4 }} onClick={() => setExpanded(new Set([...expanded, title]))}>
+            Show all {ids.length}
+          </button>
+        )}
       </div>
     ) : null
 
@@ -144,7 +154,7 @@ function SaveDetail({ save }: { save: SaveSummary }) {
     <div className="panel" style={{ position: 'sticky', top: 0 }}>
       <div className="panel-head">
         <h3 className="grow ellipsis">{save.name}</h3>
-        <button className="btn sm icon ghost" title="Show in folder" onClick={() => api.showItem(save.path)}>
+        <button className="btn sm icon ghost" title="Show in folder" aria-label="Show in folder" onClick={() => api.showItem(save.path)}>
           <FolderOpen size={13} />
         </button>
       </div>
@@ -158,7 +168,7 @@ function SaveDetail({ save }: { save: SaveSummary }) {
         <button className="btn primary" style={{ marginTop: 12, width: '100%', justifyContent: 'center' }} onClick={adopt}>
           Use this save's mod list
         </button>
-        <button className="btn play" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }} onClick={play} title="Switch to this save's mods, save, start RimWorld and open this save">
+        <button className="btn play" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }} disabled={s.launching} onClick={play} title="Switch to this save's mods, save, start RimWorld and open this save">
           <Play size={13} fill="currentColor" /> Play this save
         </button>
         {!missing.length && !inactive.length && !extra.length && <p className="muted">Your current load order has exactly these mods.</p>}

@@ -2,7 +2,12 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { api, platform } from './api'
 import { useStore } from './store'
+import { watchErrors } from './errors'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './styles.css'
+
+// Uncaught errors go to RimDeck's own error log, so a bug report can include them.
+watchErrors()
 
 // Lets the stylesheet leave room for each platform's window buttons.
 document.documentElement.dataset.platform = platform
@@ -20,4 +25,8 @@ try {
   // not supported
 }
 
-createRoot(document.getElementById('root')!).render(<App />)
+createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>,
+)

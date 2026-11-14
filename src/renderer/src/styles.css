@@ -36,13 +36,19 @@
   --plate-lip: rgb(0 0 0 / 0.5);
   --knob: #f3ede1;
   --overlay: rgb(5 6 8 / 0.62);
-  --scrim: rgb(0 0 0 / 0.62);
+  --scrim: rgb(0 0 0 / 0.72);
+  /* The scrim is dark in both themes, so labels on it always use light text. */
+  --on-scrim: #f3ede1;
+  --warn-on-scrim: #e5b04a;
   --checker-a: #1d2226;
   --checker-b: #14171a;
   --glow: color-mix(in srgb, var(--steel) 9%, transparent);
   --radius: 8px;
   --radius-sm: 5px;
+  /* The mod lists only render the rows near their view and place them with these heights
+     (components/ModList.tsx): rows and section labels must be exactly this tall, with no margins. */
   --row-h: 30px;
+  --section-h: 24px;
   --font: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --mono: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
   --shadow: 0 18px 50px -12px rgb(0 0 0 / 0.7), 0 0 0 1px var(--line-2);
@@ -81,7 +87,7 @@
   --plate-lip: rgb(90 70 40 / 0.18);
   --knob: #ffffff;
   --overlay: rgb(60 50 35 / 0.35);
-  --scrim: rgb(30 25 18 / 0.6);
+  --scrim: rgb(30 25 18 / 0.72);
   --checker-a: #ddd5c6;
   --checker-b: #ece6db;
   --glow: color-mix(in srgb, var(--accent) 7%, transparent);
@@ -280,6 +286,7 @@ a:hover {
 }
 .rail-btn {
   position: relative;
+  flex-shrink: 0; /* scroll when there is no room, never squash */
   width: 38px;
   height: 38px;
   border-radius: 7px;
@@ -332,6 +339,22 @@ a:hover {
 }
 .rail-spacer {
   flex: 1;
+}
+/* Short windows (minimum 640px tall leaves the rail 596px): 15 buttons + the spacer are 16 flex items, 15 gaps.
+   Normal: 15*38 + 15*4 + 20 = 650px, too tall. Tight: 15*36 + 15*2 + 12 = 582px, fits.
+   The rail is 56px with a 1px right border, so buttons centre in 55px: a 36px one sits 9.5px in. */
+@media (max-height: 720px) {
+  .rail {
+    padding: 6px 0;
+    gap: 2px;
+  }
+  .rail-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .rail-btn.active::before {
+    left: -9.5px;
+  }
 }
 
 .main {
@@ -478,6 +501,12 @@ a:hover {
 .btn.play {
   --fill: var(--play);
 }
+/* The clipped corners would cut off an outside ring, so these show it inside the plate. */
+.btn.primary:focus-visible,
+.btn.play:focus-visible {
+  outline: 2px solid var(--on-accent);
+  outline-offset: -4px;
+}
 .btn.primary:hover:not(:disabled),
 .btn.play:hover:not(:disabled) {
   filter: brightness(1.08) saturate(1.05);
@@ -551,6 +580,10 @@ a:hover {
 .input:focus {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.input:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 textarea.input {
   height: auto;
@@ -730,7 +763,7 @@ textarea.input {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 24px;
+  height: var(--section-h);
   padding: 8px 8px 0;
   font-size: 10.5px;
   font-weight: 700;
@@ -887,22 +920,19 @@ textarea.input {
 .issue-badge.info {
   color: var(--info);
 }
+/* Fixed to the window and placed by IssueBadge, so the scrolling list cannot clip it. */
 .hovercard {
-  display: none;
-  position: absolute;
-  right: -6px;
-  top: 22px;
+  display: block;
+  position: fixed;
   width: 300px;
-  z-index: 20;
+  max-width: calc(100vw - 16px);
+  z-index: 65;
   padding: 8px;
   border-radius: 7px;
   background: var(--bg-2);
   box-shadow: var(--shadow);
   color: var(--text);
   cursor: default;
-}
-.issue-badge:hover .hovercard {
-  display: block;
 }
 .hovercard .hc-item {
   display: flex;
@@ -938,7 +968,7 @@ textarea.input {
 .hero.blank {
   background:
     radial-gradient(circle at 25% 20%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 55%),
-    radial-gradient(circle at 80% 60%, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 55%), var(--bg-2);
+    radial-gradient(circle at 80% 60%, color-mix(in srgb, var(--steel) 18%, transparent), transparent 55%), var(--bg-2);
 }
 .details-body {
   padding: 0 16px 20px;
@@ -1122,7 +1152,7 @@ textarea.input {
   color: var(--ok);
 }
 .patch-kind.transpiler {
-  color: var(--accent-2);
+  color: var(--accent-text);
 }
 .patch-kind.finalizer,
 .patch-kind.manual {
@@ -1331,6 +1361,8 @@ textarea.input {
   justify-content: center;
   padding-top: 9vh;
   animation: fade 0.12s ease-out;
+  /* Over the title bar too, so clicks near the top reach the backdrop instead of dragging the window. */
+  -webkit-app-region: no-drag;
 }
 @keyframes fade {
   from {
@@ -1382,6 +1414,79 @@ textarea.input {
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
+/* Report a bug: the preview takes whatever height is left. */
+.modal.report {
+  height: min(680px, 80vh);
+}
+.report-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px 12px;
+}
+.report-body textarea {
+  flex: none;
+  min-height: 64px;
+  max-height: 30vh;
+}
+.report-label {
+  font-weight: 580;
+  font-size: 12.5px;
+}
+.report-check {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.report-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.report-preview {
+  flex: 1;
+  min-height: 72px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.report-preview:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+.report-note {
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.crash-screen > div {
+  max-width: 460px;
+  padding: 16px;
+  text-align: center;
+}
+.crash-screen h1 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  color: var(--text);
+}
+.crash-screen p {
+  margin: 0 0 16px;
+}
+.crash-screen .row {
+  justify-content: center;
+}
+
 .move {
   display: grid;
   grid-template-columns: 74px 1fr;
@@ -1473,6 +1578,7 @@ textarea.input {
   border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
   color: var(--text);
   font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 .banner.accent {
   background: var(--accent-soft);
@@ -1503,6 +1609,7 @@ textarea.input {
   font-size: 12.5px;
   animation: pop 0.16s ease-out;
   max-width: 420px;
+  overflow-wrap: anywhere;
 }
 .toast.ok svg {
   color: var(--ok);
@@ -1556,6 +1663,7 @@ textarea.input {
   background: var(--bg-2);
   box-shadow: var(--shadow);
   animation: pop 0.1s ease-out;
+  -webkit-app-region: no-drag;
 }
 .menu button {
   display: flex;
@@ -1579,6 +1687,32 @@ textarea.input {
   height: 1px;
   background: var(--line-2);
   margin: 4px 2px;
+}
+/* Items with a second line of text (the profile switcher). */
+.menu button.two-line {
+  height: auto;
+  min-height: 30px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  line-height: 1.35;
+}
+/* Colour swatches keep their small square shape inside a menu. */
+.menu .swatches {
+  max-width: 260px;
+}
+.menu .swatch {
+  flex: none;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+.menu .swatch.on {
+  border-color: var(--text);
 }
 
 .prob-row {
@@ -1620,6 +1754,7 @@ textarea.input {
 /* Downloads */
 .rail-badge.accent {
   background: var(--accent);
+  color: var(--on-accent);
 }
 .rail-badge.info {
   background: var(--info);
@@ -1675,6 +1810,7 @@ textarea.input {
   color: var(--text-2);
   white-space: pre-wrap;
   word-break: break-all;
+  user-select: text;
 }
 
 .badge {
@@ -1846,7 +1982,7 @@ textarea.input {
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--scrim);
-  color: var(--text-2);
+  color: var(--on-scrim);
 }
 .tex-none {
   display: flex;
@@ -1899,13 +2035,14 @@ textarea.input {
   padding: 2px 8px;
   border-radius: 4px;
   background: var(--scrim);
+  color: var(--on-scrim);
 }
 .slider-tag.left {
   left: 8px;
 }
 .slider-tag.right {
   right: 8px;
-  color: var(--warn);
+  color: var(--warn-on-scrim);
 }
 .slider-range {
   width: 100%;
@@ -2073,7 +2210,8 @@ textarea.input {
   display: block;
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  /* The text shade of the accent, so a light accent still stands out from the light track. */
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-text) 70%, var(--bg-4)), var(--accent-text));
 }
 
 /* ---------- Research ---------- */

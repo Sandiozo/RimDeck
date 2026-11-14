@@ -31,17 +31,20 @@ import {
 } from 'lucide-react'
 import { useStore, type View } from '../store'
 import { switchProfile } from './ProfileSwitcher'
+import { openBugReport } from './BugReport'
 import { api } from '../api'
-import { ModIcon } from './ui'
+import { ModIcon, useEscape } from './ui'
 import { kb } from '../lib'
 
 export function SortPreview() {
   const s = useStore()
   const p = s.sortPreview
+  const ref = useRef<HTMLDivElement>(null)
+  useEscape(ref, () => s.closeSort(), !!p)
   if (!p) return null
   const name = (id: string) => s.activeMap.get(id)?.name ?? id
   return (
-    <div className="overlay" onMouseDown={() => s.closeSort()}>
+    <div ref={ref} className="overlay" onMouseDown={() => s.closeSort()}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <ArrowDownUp size={20} color="var(--accent-text)" style={{ marginTop: 2 }} />
@@ -56,8 +59,9 @@ export function SortPreview() {
           {p.cycles.length > 0 && (
             <div className="issue-card warning" style={{ margin: '0 6px 10px' }}>
               <div className="t">
-                {p.cycles.length} conflicting rule {p.cycles.length === 1 ? 'loop' : 'loops'}, resolved by keeping your current order
+                {p.cycles.length === 1 ? 'These mods have load order rules that contradict each other' : `${p.cycles.length} groups of mods have load order rules that contradict each other`}
               </div>
+              <div className="d">Each arrow means “loads before”. Not every rule in a loop can be followed, so the first mod shown loads first.</div>
               {p.cycles.map((c, i) => (
                 <div key={i} className="d">
                   {c.map(name).join(' → ')} → {name(c[0])}
@@ -112,7 +116,10 @@ export function Palette() {
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => inputRef.current?.focus(), [])
+  // Also works after a click has moved focus out of the search box.
+  useEscape(ref, () => s.setPalette(false))
 
   const go = (v: View) => () => s.setView(v)
   const commands: Cmd[] = [
@@ -155,6 +162,7 @@ export function Palette() {
     { id: 'updates', label: 'Check Workshop mods for updates', icon: <RefreshCw size={15} />, run: () => { s.setView('downloads'); void s.checkUpdates(true) }, group: 'Commands' },
     { id: 'v-settings', label: 'Go to Settings', icon: <Settings size={15} />, run: go('settings'), group: 'Commands' },
     { id: 'folder', label: 'Open game folder', icon: <FolderOpen size={15} />, run: () => api.openPath(s.app!.settings.paths.gameDir), group: 'Commands' },
+    { id: 'bug-report', label: 'Report a bug', icon: <Bug size={15} />, run: openBugReport, group: 'Commands' },
   ]
 
   const items = useMemo(() => {
@@ -193,7 +201,7 @@ export function Palette() {
   let lastGroup = ''
 
   return (
-    <div className="overlay" onMouseDown={() => s.setPalette(false)}>
+    <div ref={ref} className="overlay" onMouseDown={() => s.setPalette(false)}>
       <div className="palette" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <Search size={17} />
@@ -203,8 +211,7 @@ export function Palette() {
             placeholder="Search mods, authors, or type a command…"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') s.setPalette(false)
-              else if (e.key === 'ArrowDown') {
+              if (e.key === 'ArrowDown') {
                 e.preventDefault()
                 setIdx(Math.min(items.length - 1, idx + 1))
               } else if (e.key === 'ArrowUp') {

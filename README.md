@@ -85,6 +85,7 @@ On first start, RimDeck finds RimWorld through Steam or imports your RimSort fol
 - **Profiles** — separate setups, each with its own game install (game version) and its own mods and load order; switch from the title bar.
 - **Saves** — see which mods a save used and load that list.
 - **Find a broken mod** — a binary search that halves the suspects on each launch.
+- **Bug reports** — describe a problem and RimDeck adds your setup and its recent errors; you read the whole report and send it yourself as a GitHub issue. Nothing is sent automatically.
 
 Full feature reference: [docs/FEATURES.md](docs/FEATURES.md).
 

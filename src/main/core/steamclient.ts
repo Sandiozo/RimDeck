@@ -44,24 +44,41 @@ export async function steamWorkshop(action: 'unsubscribe' | 'subscribe', ids: st
   const script = join(workDir, 'steam-helper.cjs')
   await writeFile(script, HELPER, 'utf8')
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', RD_SW_PATH: steamworksPath(), RD_SW_JOB: JSON.stringify({ action, ids }) },
-      windowsHide: true,
-    })
+    let settled = false
+    let timer: NodeJS.Timeout | undefined
+    const finish = (r: SteamJobResult) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(r)
+    }
+    // Without an 'error' listener a failed start (missing file, no permission) would crash the main process.
+    const startFailed = () => finish({ ok: false, done: [], failed: [], error: 'Could not start the Steam helper.' })
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(process.execPath, [script], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', RD_SW_PATH: steamworksPath(), RD_SW_JOB: JSON.stringify({ action, ids }) },
+        windowsHide: true,
+      })
+    } catch {
+      return startFailed()
+    }
     let out = ''
     let err = ''
-    child.stdout.on('data', (d) => (out += d))
-    child.stderr.on('data', (d) => (err += d))
-    const timer = setTimeout(() => child.kill(), 45000)
+    child.stdout?.on('data', (d) => (out += d))
+    child.stderr?.on('data', (d) => (err += d))
+    child.stdout?.on('error', () => {})
+    child.stderr?.on('error', () => {})
+    child.on('error', startFailed)
+    timer = setTimeout(() => child.kill(), 45000)
     child.on('close', () => {
-      clearTimeout(timer)
       try {
         // steam_api prints its own lines to stdout, so only the marked line is ours.
         const r = JSON.parse(out.match(/@@RIMDECK@@(.*)/)![1])
-        if (!r.ok) return resolve({ ok: false, done: [], failed: [], error: r.error === 'steam-not-running' ? 'Steam must be running and logged in.' : r.detail })
-        resolve({ ok: true, done: r.done, failed: r.failed })
+        if (!r.ok) return finish({ ok: false, done: [], failed: [], error: r.error === 'steam-not-running' ? 'Steam must be running and logged in.' : r.detail })
+        finish({ ok: true, done: r.done, failed: r.failed })
       } catch {
-        resolve({ ok: false, done: [], failed: [], error: (err || 'The Steam helper did not respond').split('\n')[0] })
+        finish({ ok: false, done: [], failed: [], error: (err || 'The Steam helper did not respond').split('\n')[0] })
       }
     })
   })

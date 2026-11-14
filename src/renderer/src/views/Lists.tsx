@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArchiveRestore, Check, Copy, CopyPlus, Download, Pencil, Plus, Trash, Upload, UserRound } from 'lucide-react'
 import type { Profile } from '@shared/types'
 import { useStore } from '../store'
@@ -8,6 +8,21 @@ import { useInstalls } from '../components/Installs'
 import { switchProfile } from '../components/ProfileSwitcher'
 
 const newId = () => `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+
+// Profile edits run one after another, each on the list the previous one saved, so none overwrites another.
+let profileQueue: Promise<unknown> = Promise.resolve()
+function saveProfiles(change: (list: Profile[]) => Profile[]): Promise<boolean> {
+  const run = profileQueue.then(async () => {
+    const st = useStore.getState()
+    await st.setUser({ profiles: change(st.app?.user.profiles ?? []) })
+    return true
+  })
+  profileQueue = run.catch(() => {})
+  return run.catch((e: any) => {
+    useStore.getState().toast('error', `Could not save profiles: ${e.message}`)
+    return false
+  })
+}
 
 export function ListsView() {
   const s = useStore()
@@ -19,45 +34,78 @@ export function ListsView() {
   const [installId, setInstallId] = useState(s.app!.settings.currentInstall)
   const [start, setStart] = useState<'current' | 'vanilla'>('current')
   const [renaming, setRenaming] = useState<string | null>(null)
+  const renamingRef = useRef<string | null>(null)
   const [draft, setDraft] = useState('')
   const [backups, setBackups] = useState<{ file: string; mtime: number; count: number }[]>([])
   useEffect(() => {
-    api.listBackups().then(setBackups)
+    api.listBackups().then(setBackups, (e) => s.toast('error', `Could not list backups: ${e.message}`))
   }, [s.saved])
   useEffect(() => {
-    if (!installs) void loadInstalls()
+    if (!installs) loadInstalls().catch((e) => s.toast('error', `Could not list game installs: ${e.message}`))
   }, [])
 
-  const saveProfiles = (next: Profile[]) => s.setUser({ profiles: next })
   const install = (id: string) => installs?.find((i) => i.id === id)
 
-  const create = (mods: string[], label?: string) => {
-    const n = (label ?? name).trim() || `Profile ${profiles.length + 1}`
+  const create = async (mods: string[], label?: string) => {
+    const typed = (label ?? name).trim()
     const now = Date.now()
-    saveProfiles([...profiles, { id: newId(), name: n, installId, mods, createdAt: now, updatedAt: now }])
-    setName('')
+    let n = typed
+    const ok = await saveProfiles((list) => {
+      n = typed || `Profile ${list.length + 1}`
+      return [...list, { id: newId(), name: n, installId, mods, createdAt: now, updatedAt: now }]
+    })
+    if (!ok) return
+    if (label === undefined) setName('')
     s.toast('ok', `Created profile “${n}”`)
   }
   const createFromForm = () => create(start === 'current' ? s.active : ['brrainz.harmony', 'ludeon.rimworld'].filter((id) => s.installed.has(id)))
 
-  const update = (id: string, patch: Partial<Profile>) => saveProfiles(profiles.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: Date.now() } : p)))
+  const update = (id: string, patch: Partial<Profile>) => saveProfiles((list) => list.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: Date.now() } : p)))
+
+  // Enter or leaving the field keeps the new name; Escape cancels. The ref stops a second call (blur after Enter).
+  const startRename = (p: Profile) => {
+    renamingRef.current = p.id
+    setRenaming(p.id)
+    setDraft(p.name)
+  }
+  const finishRename = (p: Profile, keep: boolean) => {
+    if (renamingRef.current !== p.id) return
+    renamingRef.current = null
+    setRenaming(null)
+    const n = draft.trim()
+    if (keep && n && n !== p.name) void update(p.id, { name: n })
+  }
 
   const importFile = async () => {
-    const file = await api.pickOpenFile('Import a mod list as a new profile', ['xml', 'rml', 'rws'])
-    if (!file) return
     try {
+      const file = await api.pickOpenFile('Import a mod list as a new profile', ['xml', 'rml', 'rws'])
+      if (!file) return
       const ids = await api.readListFile(file)
       if (!ids.length) throw new Error('No mods found in that file')
-      create(ids, file.split(/[\\/]/).pop()!.replace(/\.(xml|rml|rws)$/i, ''))
+      await create(ids, file.split(/[\\/]/).pop()!.replace(/\.(xml|rml|rws)$/i, ''))
     } catch (e: any) {
       s.toast('error', e.message)
     }
   }
   const exportFile = async () => {
-    const file = await api.pickSaveFile('Export the current load order', 'ModList.xml')
-    if (!file) return
-    await api.writeListFile(file, s.active)
-    s.toast('ok', 'Load order exported')
+    try {
+      const file = await api.pickSaveFile('Export the current load order', 'ModList.xml')
+      if (!file) return
+      await api.writeListFile(file, useStore.getState().active)
+      s.toast('ok', 'Load order exported')
+    } catch (e: any) {
+      s.toast('error', `Could not export the load order: ${e.message}`)
+    }
+  }
+  const restore = async (file: string) => {
+    try {
+      const ids = await api.readListFile(file)
+      s.setActive(ids)
+      s.setView('mods')
+      s.toast('ok', 'Backup loaded. Review it, then save.')
+    } catch (e: any) {
+      s.toast('error', `Could not read the backup: ${e.message}`)
+    }
   }
   const copy = (text: string, what: string) =>
     navigator.clipboard.writeText(text).then(
@@ -119,12 +167,10 @@ export function ListsView() {
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && draft.trim()) {
-                            update(p.id, { name: draft.trim() })
-                            setRenaming(null)
-                          } else if (e.key === 'Escape') setRenaming(null)
+                          if (e.key === 'Enter' && draft.trim()) finishRename(p, true)
+                          else if (e.key === 'Escape') finishRename(p, false)
                         }}
-                        onBlur={() => setRenaming(null)}
+                        onBlur={() => finishRename(p, true)}
                       />
                     ) : (
                       <div className="row" style={{ gap: 8 }}>
@@ -159,7 +205,7 @@ export function ListsView() {
                         <Check size={12} /> Use
                       </button>
                     )}{' '}
-                    <button className="btn sm ghost icon" title="Rename" onClick={() => { setRenaming(p.id); setDraft(p.name) }}>
+                    <button className="btn sm ghost icon" title="Rename" onClick={() => startRename(p)}>
                       <Pencil size={12} />
                     </button>
                     <button
@@ -167,7 +213,7 @@ export function ListsView() {
                       title="Duplicate"
                       onClick={() => {
                         const now = Date.now()
-                        saveProfiles([...profiles, { ...p, id: newId(), name: `${p.name} (copy)`, createdAt: now, updatedAt: now }])
+                        void saveProfiles((list) => [...list, { ...p, id: newId(), name: `${p.name} (copy)`, createdAt: now, updatedAt: now }])
                       }}
                     >
                       <CopyPlus size={12} />
@@ -176,7 +222,7 @@ export function ListsView() {
                       className="btn sm ghost danger icon"
                       title={isCurrent ? 'The active profile cannot be deleted' : 'Delete'}
                       disabled={isCurrent}
-                      onClick={() => confirm(`Delete the profile “${p.name}”? Your mods are not affected.`) && saveProfiles(profiles.filter((x) => x.id !== p.id))}
+                      onClick={() => confirm(`Delete the profile “${p.name}”? Your mods are not affected.`) && void saveProfiles((list) => list.filter((x) => x.id !== p.id))}
                     >
                       <Trash size={12} />
                     </button>
@@ -211,7 +257,7 @@ export function ListsView() {
       <div className="panel">
         <div className="panel-head">
           <h3 className="grow">ModsConfig.xml backups</h3>
-          <span className="dim" style={{ fontSize: 12 }}>Created before every save · last 30 kept</span>
+          <span className="dim" style={{ fontSize: 12 }}>Made before every save, and when ModsConfig.xml was changed outside RimDeck · last 30 kept</span>
         </div>
         {backups.length ? (
           <table className="table">
@@ -222,15 +268,7 @@ export function ListsView() {
                   <td className="muted">{timeAgo(b.mtime)}</td>
                   <td className="mono">{b.count} mods</td>
                   <td style={{ textAlign: 'right' }}>
-                    <button
-                      className="btn sm"
-                      onClick={async () => {
-                        const ids = await api.readListFile(b.file)
-                        s.setActive(ids)
-                        s.setView('mods')
-                        s.toast('ok', 'Backup loaded. Review it, then save.')
-                      }}
-                    >
+                    <button className="btn sm" onClick={() => restore(b.file)}>
                       <ArchiveRestore size={12} /> Restore
                     </button>
                   </td>

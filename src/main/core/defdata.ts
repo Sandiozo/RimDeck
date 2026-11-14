@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises'
 import { XMLParser } from 'fast-xml-parser'
 import type { ItemDef, ModInfo, ResearchData, ResearchNode, UnlockRef } from '../../shared/types.ts'
-import { parseXpath } from './xmlindex.ts'
+import { parseXpath, readXmlText } from './xmlindex.ts'
 
 // Case-sensitive (RimWorld field names are), `li` and every top-level def are always arrays.
 const parser = new XMLParser({
@@ -28,6 +27,17 @@ interface RawDef {
 
 const txt = (v: any): string => (v == null ? '' : typeof v === 'object' ? String(v['#text'] ?? '') : String(v)).trim()
 const lis = (v: any): any[] => (v && typeof v === 'object' && Array.isArray(v.li) ? v.li : [])
+// A patch may set a number to 0, so only an empty or non-numeric value keeps the old one.
+const num = (v: string, old: number) => (v !== '' && Number.isFinite(Number(v)) ? Number(v) : old)
+// Path order, the same on every run and platform (case-insensitive like Windows' own folder listing).
+const byPath = (a: string, b: string) => {
+  const x = a.toUpperCase()
+  const y = b.toUpperCase()
+  return x < y ? -1 : x > y ? 1 : 0
+}
+// Lets the main process answer other requests between batches; a big mod list takes seconds to parse.
+const breather = () => new Promise<void>((r) => setImmediate(r))
+const CHUNK = 32 // files read ahead, then parsed in order
 
 function parseFile(raw: string): any {
   if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
@@ -62,9 +72,15 @@ async function modDefs(mod: ModInfo, index: number, files: string[]): Promise<{ 
   if (c?.key === key) return { defs: c.defs.map((d) => ({ ...d, mod: index })), patches: c.patches }
   const defs: RawDef[] = []
   const patches: { file: string; root: any }[] = []
-  await Promise.all(
-    files.map(async (file) => {
-      const raw = await readFile(file, 'utf8').catch(() => '')
+  // Files are handled in path order, so which definition wins never depends on which read finishes first.
+  const sorted = [...files].sort(byPath)
+  let unreadable = 0
+  for (let at = 0; at < sorted.length; at += CHUNK) {
+    const part = sorted.slice(at, at + CHUNK)
+    const texts = await Promise.all(part.map(readXmlText))
+    texts.forEach((raw, i) => {
+      const file = part[i]
+      if (raw == null) return void unreadable++
       if (/[\\/]patches[\\/]/i.test(file)) {
         if (raw.includes('ResearchProjectDef')) {
           const root = parseFile(raw)
@@ -84,10 +100,12 @@ async function modDefs(mod: ModInfo, index: number, files: string[]): Promise<{ 
           if (KEEP_TYPES.has(type) || isResearch(type) || unlocks) defs.push({ type, node, mod: index, file })
         }
       }
-    }),
-  )
-  patches.sort((a, b) => a.file.localeCompare(b.file))
-  cache.set(mod.path, { key, defs, patches })
+    })
+    await breather()
+  }
+  // A mod with files that could not be read is read again next time instead of keeping a partial result.
+  if (unreadable) console.warn(`[rimdeck] ${mod.packageId}: ${unreadable} definition file(s) could not be read`)
+  else cache.set(mod.path, { key, defs, patches })
   return { defs, patches }
 }
 
@@ -107,17 +125,29 @@ export async function extractDefData(
     return !req || String(req).split(',').every((p) => activeIds.has(p.trim().toLowerCase()))
   }
 
-  // Later mods replace earlier defs with the same name, exactly like DefDatabase.
+  // Later mods replace earlier defs with the same name, exactly like DefDatabase. Within one mod the game
+  // keeps the first one (in file order) and skips repeats.
   const named = new Map<string, RawDef>() // `${type}|${Name}` abstract/parent lookup
   const byDefName = new Map<string, RawDef>() // `${type}|${defName}`
-  for (const { defs } of per)
+  for (const { defs } of per) {
+    const seenNames = new Set<string>()
+    const seenDefs = new Set<string>()
     for (const d of defs) {
       if (!allowed(d.node)) continue
       const n = d.node['@Name']
-      if (n) named.set(`${d.type}|${n}`, d)
+      const nk = `${d.type}|${n}`
+      if (n && !seenNames.has(nk)) {
+        seenNames.add(nk)
+        named.set(nk, d)
+      }
       const dn = txt(d.node.defName)
-      if (dn && d.node['@Abstract'] !== 'True') byDefName.set(`${d.type}|${dn}`, d)
+      const dk = `${d.type}|${dn}`
+      if (dn && d.node['@Abstract'] !== 'True' && !seenDefs.has(dk)) {
+        seenDefs.add(dk)
+        byDefName.set(dk, d)
+      }
     }
+  }
   const resolveCache = new Map<RawDef, any>()
   const resolve = (d: RawDef, depth = 0): any => {
     if (resolveCache.has(d)) return resolveCache.get(d)
@@ -164,9 +194,9 @@ export async function extractDefData(
   }
   const setField = (n: ResearchNode, field: string, value: any, add: boolean) => {
     const v = txt(value)
-    if (field === 'researchViewX') n.x = Number(v) || n.x
-    else if (field === 'researchViewY') n.y = Number(v) || n.y
-    else if (field === 'baseCost') n.cost = Number(v) || n.cost
+    if (field === 'researchViewX') n.x = num(v, n.x)
+    else if (field === 'researchViewY') n.y = num(v, n.y)
+    else if (field === 'baseCost') n.cost = num(v, n.cost)
     else if (field === 'techLevel') n.techLevel = v || n.techLevel
     else if (field === 'tab') n.tab = v || n.tab
     else if (field === 'label') n.label = v || n.label
@@ -194,8 +224,8 @@ export async function extractDefData(
     if (!list.length) return
     for (const n of list) {
       if (/ReplaceResearchCoords/.test(cls)) {
-        if (op.researchViewX != null) n.x = Number(txt(op.researchViewX)) || n.x
-        if (op.researchViewY != null) n.y = Number(txt(op.researchViewY)) || n.y
+        if (op.researchViewX != null) n.x = num(txt(op.researchViewX), n.x)
+        if (op.researchViewY != null) n.y = num(txt(op.researchViewY), n.y)
         patchedBy(n, pid)
         continue
       }
@@ -227,8 +257,11 @@ export async function extractDefData(
   })
 
   // What each project unlocks: anything listing it in researchPrerequisites / researchPrerequisite.
+  // Resolving every ThingDef's parents is the slow part, so the event loop gets a turn now and then.
   const unlocks: Record<string, UnlockRef[]> = {}
+  let count = 0
   for (const [k, d] of byDefName) {
+    if (++count % 2000 === 0) await breather()
     const r = d.type === 'ThingDef' ? resolve(d) : d.node
     const reqs = [...lis(r.researchPrerequisites).map(txt), txt(r.researchPrerequisite)].filter(Boolean)
     for (const req of reqs) {
@@ -240,6 +273,7 @@ export async function extractDefData(
   // ---- Items ----
   const items: ItemDef[] = []
   for (const [k, d] of byDefName) {
+    if (++count % 2000 === 0) await breather()
     if (d.type !== 'ThingDef') continue
     const r = resolve(d)
     if (txt(r.category) !== 'Item' || r['@Abstract'] === 'True') continue

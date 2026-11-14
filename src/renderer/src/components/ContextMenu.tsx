@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { Gamepad2, Trash, SlidersHorizontal, ArrowDownToLine, ArrowUpToLine, Copy, ExternalLink, EyeOff, Eye, FolderOpen, Minus, Plus } from 'lucide-react'
 import { categoryOf, useStore } from '../store'
@@ -8,6 +8,7 @@ import { api, workshopUrl } from '../api'
 import { TAG_COLORS } from '../lib'
 import { openSettings, settingsFor, useSettingsFiles } from './SettingsEditor'
 import { removeLabel, removeMods, steamUrl } from '../removeMods'
+import { useEscape } from './ui'
 
 interface MenuState {
   open: { x: number; y: number; pid: string; kind: 'active' | 'inactive' } | null
@@ -18,12 +19,14 @@ export function openContextMenu(x: number, y: number, pid: string, kind: 'active
   useMenu.setState({ open: { x, y, pid, kind } })
 }
 
+const close = () => useMenu.setState({ open: null })
+
 export function ContextMenu() {
   const open = useMenu((m) => m.open)
   const s = useStore()
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    const close = () => useMenu.setState({ open: null })
     window.addEventListener('mousedown', close)
     window.addEventListener('blur', close)
     return () => {
@@ -31,9 +34,24 @@ export function ContextMenu() {
       window.removeEventListener('blur', close)
     }
   }, [open])
+  useEscape(ref, close, !!open)
+  // Open at the pointer, moved left or up only as far as needed to fit in the window. This runs
+  // before the browser paints, so the menu never shows in the wrong place first.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!open || !el) return
+    const m = 8
+    el.style.left = `${Math.max(m, Math.min(open.x, window.innerWidth - el.offsetWidth - m))}px`
+    el.style.top = `${Math.max(m, Math.min(open.y, window.innerHeight - el.offsetHeight - m))}px`
+  })
   if (!open) return null
 
   const ids = s.selection.has(open.pid) ? [...s.selection] : [open.pid]
+  // The selection can span both lists; activate, deactivate and move only apply to mods in this one.
+  const activeSet = new Set(s.active)
+  const here = ids.filter((id) => (open.kind === 'active' ? activeSet.has(id) : !activeSet.has(id)))
+  const canDeactivate = here.filter((id) => id !== 'ludeon.rimworld')
+  const count = (list: string[]) => (list.length > 1 ? ` ${list.length} mods` : '')
   const mod = s.installed.get(open.pid)?.[0]
   const meta = s.app?.user.meta[open.pid]
   const ignored = s.app?.user.ignored.includes(open.pid)
@@ -42,26 +60,26 @@ export function ContextMenu() {
   const run = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation()
     fn()
-    useMenu.setState({ open: null })
+    close()
   }
-  const x = Math.min(open.x, window.innerWidth - 230)
-  const y = Math.max(8, Math.min(open.y, window.innerHeight - 520))
 
   return (
-    <div className="menu" style={{ left: x, top: y, maxHeight: window.innerHeight - 16, overflowY: 'auto' }} onMouseDown={(e) => e.stopPropagation()}>
+    <div ref={ref} className="menu" style={{ maxHeight: window.innerHeight - 16, overflowY: 'auto' }} onMouseDown={(e) => e.stopPropagation()}>
       {open.kind === 'inactive' ? (
-        <button onClick={run(() => s.activate(ids))}>
-          <Plus size={14} /> Activate{multi ? ` ${ids.length} mods` : ''}
+        <button onClick={run(() => s.activate(here))}>
+          <Plus size={14} /> Activate{count(here)}
         </button>
       ) : (
         <>
-          <button onClick={run(() => s.deactivate(ids))}>
-            <Minus size={14} /> Deactivate{multi ? ` ${ids.length} mods` : ''}
-          </button>
-          <button onClick={run(() => s.move(ids, 0))}>
+          {canDeactivate.length > 0 && (
+            <button onClick={run(() => s.deactivate(canDeactivate))}>
+              <Minus size={14} /> Deactivate{count(canDeactivate)}
+            </button>
+          )}
+          <button onClick={run(() => s.move(here, 0))}>
             <ArrowUpToLine size={14} /> Move to top
           </button>
-          <button onClick={run(() => s.move(ids, s.active.length))}>
+          <button onClick={run(() => s.move(here, s.active.length))}>
             <ArrowDownToLine size={14} /> Move to bottom
           </button>
         </>
@@ -137,7 +155,7 @@ export function ContextMenu() {
       )}
       <hr />
       <div className="swatches" style={{ padding: '4px 8px 6px' }}>
-        <button type="button" className="swatch none" title="No color" aria-label="No color" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], color: undefined })))}>
+        <button type="button" className={'swatch none' + (!meta?.color ? ' on' : '')} title="No color" aria-label="No color" onClick={run(() => ids.forEach((id) => s.setMeta(id, { ...s.app!.user.meta[id], color: undefined })))}>
           ×
         </button>
         {TAG_COLORS.map((c) => (

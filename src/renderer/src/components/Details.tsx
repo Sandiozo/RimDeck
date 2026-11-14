@@ -4,9 +4,9 @@ import type { ModCategory } from '@shared/types'
 import { CATEGORY_LABEL, resolver } from '@shared/graph'
 import { categoryOf, useStore } from '../store'
 import { api, imgUrl, workshopUrl } from '../api'
-import { kb, richText, TAG_COLORS, timeAgo } from '../lib'
+import { isOutdated, kb, richText, TAG_COLORS, timeAgo } from '../lib'
 import { clickable, ModIcon, SeverityIcon } from './ui'
-import { removeLabel, removeMods, steamUrl } from '../removeMods'
+import { removeLabel, removeMods, steamUrl, trashName } from '../removeMods'
 import { ModSettingsSection, openSettings, settingsFor, useSettingsFiles } from './SettingsEditor'
 
 export function IssueCard({ issue }: { issue: import('@shared/types').Issue }) {
@@ -39,7 +39,10 @@ export function Details() {
   const meta = pid ? app.user.meta[pid] : undefined
   const [tagDraft, setTagDraft] = useState('')
   const [notes, setNotes] = useState(meta?.notes ?? '')
-  const [showAll, setShowAll] = useState(false)
+  // Each long list has its own expand state; both fold again when another mod is shown.
+  const [allPatches, setAllPatches] = useState(false)
+  const [fullDesc, setFullDesc] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
   // Clicking another mod changes the selection before the text box loses focus, so unsaved
   // notes and tags remember which mod they were typed for.
   const draft = useRef<{ pid: string; notes?: string; tag?: string }>({ pid: pid ?? '' })
@@ -58,7 +61,8 @@ export function Details() {
     flushDraft()
     setNotes(meta?.notes ?? '')
     setTagDraft('')
-    setShowAll(false)
+    setAllPatches(false)
+    setFullDesc(false)
   }, [pid])
 
   const isActive = pid ? s.active.includes(pid) : false
@@ -77,7 +81,8 @@ export function Details() {
   // Other active mods that patch the same game methods.
   const overlaps = useMemo(() => {
     if (!report || !pid) return []
-    const mine = new Set(report.patches.filter((p) => p.targetMember).map((p) => `${p.targetType}::${p.targetMember}`))
+    // Targets the analysis could not resolve ("?") would match unrelated patches.
+    const mine = new Set(report.patches.filter((p) => p.targetMember && p.targetType !== '?').map((p) => `${p.targetType}::${p.targetMember}`))
     const out: { pid: string; targets: string[] }[] = []
     for (const [other, r] of Object.entries(s.analysis)) {
       if (other === pid || !s.active.includes(other)) continue
@@ -119,7 +124,7 @@ export function Details() {
   const supports = mod?.supportedVersions ?? []
   const category = categoryOf(s, pid)
   const description = mod?.description ?? ''
-  const longDesc = description.length > 900 && !showAll
+  const longDesc = description.length > 900 && !fullDesc
 
   return (
     <section className="pane details">
@@ -145,7 +150,7 @@ export function Details() {
               {v}
             </span>
           ))}
-          {mod && mod.source !== 'dlc' && mod.source !== 'core' && !supports.includes(app.gameMajor) && <span className="chip warn">Not marked for {app.gameMajor}</span>}
+          {mod && isOutdated(mod, app.gameMajor) && <span className="chip warn">Not marked for {app.gameMajor}</span>}
           {update && (
             <span className="chip info click" title={`Workshop upload from ${new Date(update.remoteTime * 1000).toLocaleString()}`} onClick={() => s.setView('downloads')}>
               <Download size={10} /> Update available
@@ -189,7 +194,7 @@ export function Details() {
           {removeLabel([pid]) && (
             <button
               className="btn sm ghost danger"
-              title={mod?.source === 'workshop' ? 'Unsubscribe on Steam; Steam then deletes the files' : 'Move this mod folder to the Recycle Bin'}
+              title={mod?.source === 'workshop' ? 'Unsubscribe on Steam; Steam then deletes the files' : `Move this mod folder to the ${trashName}`}
               onClick={() => removeMods([pid])}
             >
               <Trash size={13} /> {removeLabel([pid])}
@@ -350,8 +355,21 @@ export function Details() {
               <Cpu size={11} /> Code
               <span className="grow" />
               {!report && (
-                <button className="btn sm" onClick={() => s.analyze([pid, ...s.active])}>
-                  Analyze patches
+                <button
+                  className="btn sm"
+                  disabled={analyzing}
+                  onClick={async () => {
+                    setAnalyzing(true)
+                    try {
+                      await s.analyze([pid, ...s.active])
+                    } catch (e: any) {
+                      s.toast('error', `Could not analyze patches: ${e?.message ?? e}`)
+                    } finally {
+                      setAnalyzing(false)
+                    }
+                  }}
+                >
+                  {analyzing ? 'Analyzing…' : 'Analyze patches'}
                 </button>
               )}
             </h4>
@@ -377,18 +395,23 @@ export function Details() {
                     ))}
                   </div>
                 )}
-                {report.patches.slice(0, showAll ? 400 : 40).map((p, i) => (
+                {report.patches.slice(0, allPatches ? 400 : 40).map((p, i) => (
                   <div key={i} className="patch-row" title={p.patchClass}>
                     <span className={'patch-kind ' + p.kind}>{p.kind}</span>
-                    <span className="ellipsis">
-                      {p.targetType.split('.').pop()}
-                      <span className="dim">::</span>
-                      {p.targetMember ?? '?'}
-                    </span>
+                    {/* "?" is what the analysis reports for a type or method it could not work out. */}
+                    {p.targetType === '?' && !p.targetMember ? (
+                      <span className="ellipsis dim">unknown target</span>
+                    ) : (
+                      <span className="ellipsis">
+                        {p.targetType === '?' ? <span className="dim">unknown type</span> : p.targetType.split('.').pop()}
+                        <span className="dim">::</span>
+                        {p.targetMember ?? <span className="dim">unknown method</span>}
+                      </span>
+                    )}
                   </div>
                 ))}
-                {report.patches.length > 40 && !showAll && (
-                  <button className="btn ghost sm" onClick={() => setShowAll(true)}>
+                {report.patches.length > 40 && !allPatches && (
+                  <button className="btn ghost sm" onClick={() => setAllPatches(true)}>
                     Show all {report.patches.length}
                   </button>
                 )}
@@ -422,7 +445,7 @@ export function Details() {
             <h4>Description</h4>
             <div className="desc" dangerouslySetInnerHTML={{ __html: richText(longDesc ? description.slice(0, 900) + '…' : description) }} />
             {longDesc && (
-              <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={() => setShowAll(true)}>
+              <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={() => setFullDesc(true)}>
                 Read more
               </button>
             )}

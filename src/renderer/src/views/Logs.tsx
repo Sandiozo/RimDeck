@@ -14,12 +14,16 @@ export function LogsView() {
   const [q, setQ] = useState('')
   const [modFilter, setModFilter] = useState<string | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
+  const [limit, setLimit] = useState(400)
+  const [failed, setFailed] = useState(false)
 
   const load = async () => {
     setBusy(true)
+    setFailed(false)
     try {
       setReport(await api.readLog())
     } catch (e: any) {
+      setFailed(true)
       useStore.getState().toast('error', `Could not read the game log: ${e.message}`)
     } finally {
       setBusy(false)
@@ -56,7 +60,9 @@ export function LogsView() {
               ? `${report.path} · ${report.lines.toLocaleString()} lines · written ${timeAgo(report.mtime)}`
               : report === null
                 ? 'No Player.log found. Launch the game once to create it.'
-                : 'Reading Player.log…'}
+                : failed
+                  ? 'Could not read Player.log.'
+                  : 'Reading Player.log…'}
           </p>
         </div>
         {report && (
@@ -124,7 +130,7 @@ export function LogsView() {
               </label>
               <span className="count">{entries.length}</span>
             </div>
-            {entries.slice(0, 400).map((e) => {
+            {entries.slice(0, limit).map((e) => {
               const isOpen = open.has(e.key)
               return (
                 <div key={e.key} className="log-entry">
@@ -177,6 +183,16 @@ export function LogsView() {
                 </div>
               )
             })}
+            {entries.length > limit && (
+              <div className="row" style={{ padding: 10, gap: 10 }}>
+                <span className="dim" style={{ fontSize: 12 }}>
+                  Showing the first {limit} of {entries.length} entries.
+                </span>
+                <button className="btn ghost sm" onClick={() => setLimit(limit + 400)}>
+                  Show more
+                </button>
+              </div>
+            )}
             {!entries.length && <div className="empty">No matching entries.</div>}
           </div>
         </>

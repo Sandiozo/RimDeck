@@ -5,11 +5,17 @@ import { isDirty, useStore } from '../store'
 import { api } from '../api'
 import { useDefs } from '../defStore'
 import { useInstalls } from './Installs'
+import { useEscape } from './ui'
 
 /** Loads a profile: its game install (if different) and its mods, written to ModsConfig.xml so the game uses them. */
 export async function switchProfile(id: string) {
   const s = useStore.getState()
+  // A running search has disabled part of this profile's mods; switching now would leave them off.
+  if (s.bisect && !s.bisect.culprit) return s.toast('info', 'A broken mod search is running. Stop it with “Stop and restore” before switching profiles.')
   if (isDirty(s) && !confirm('You have unsaved load order changes. Switch profile and discard them?')) return
+  // The finished search's result and an open sort preview belong to the old list.
+  if (s.bisect) s.stopBisect(false)
+  if (s.sortPreview) s.closeSort()
   try {
     const app = await api.switchProfile(id)
     const active = app.config?.activeMods ?? []
@@ -32,6 +38,7 @@ export function ProfileSwitcher() {
   const { list, load } = useInstalls()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const profiles = s.app?.user.profiles ?? []
   const current = profiles.find((p) => p.id === s.app?.user.currentProfile)
   useEffect(() => {
@@ -43,8 +50,10 @@ export function ProfileSwitcher() {
     window.addEventListener('mousedown', close)
     return () => window.removeEventListener('mousedown', close)
   }, [open])
+  useEscape(menuRef, () => setOpen(false), open)
   const versionOf = (p: Profile) => list?.find((i) => i.id === p.installId)?.version.match(/^\d+\.\d+/)?.[0] ?? ''
-  const installName = (p: Profile) => list?.find((i) => i.id === p.installId)?.name ?? 'Missing install'
+  // Nothing is said about the install until the list of installs has loaded.
+  const installName = (p: Profile) => (list ? `${list.find((i) => i.id === p.installId)?.name ?? 'Missing install'} · ` : '')
 
   return (
     <div ref={ref} className="no-drag" style={{ position: 'relative' }}>
@@ -55,11 +64,12 @@ export function ProfileSwitcher() {
         <ChevronDown size={12} />
       </button>
       {open && (
-        <div className="menu" style={{ position: 'absolute', left: 0, top: 30, width: 340 }}>
+        <div ref={menuRef} className="menu" style={{ position: 'absolute', left: 0, top: 30, width: 340 }}>
           <div className="menu-label">Profiles</div>
           {profiles.map((p) => (
             <button
               key={p.id}
+              className="two-line"
               onClick={() => {
                 setOpen(false)
                 if (p.id !== current?.id) void switchProfile(p.id)
@@ -69,7 +79,7 @@ export function ProfileSwitcher() {
               <span className="grow" style={{ minWidth: 0 }}>
                 <span className="ellipsis" style={{ display: 'block', fontWeight: 560 }}>{p.name}</span>
                 <span className="ellipsis dim" style={{ display: 'block', fontSize: 11 }}>
-                  {installName(p)} · {p.mods.length} mods
+                  {installName(p)}{p.mods.length} mods
                 </span>
               </span>
               <span className="dim mono" style={{ fontSize: 10.5 }}>{versionOf(p)}</span>

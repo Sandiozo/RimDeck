@@ -10,16 +10,30 @@ export const useDefs = create<{ data: DefData | null; scannedFor: string; busy: 
   error: '',
 }))
 
+// Only the newest request may write its result, so a slow earlier read can't replace a later one.
+let latest = 0
+let latestFor = ''
+
 export async function loadDefs(active: string[]) {
+  const id = ++latest
+  const key = active.join('|')
+  latestFor = key
   useDefs.setState({ busy: true, error: '' })
   try {
     const data = await api.defData(active)
-    useDefs.setState({ data, scannedFor: active.join('|') })
+    if (id === latest) useDefs.setState({ data, scannedFor: key })
   } catch (e: any) {
-    useDefs.setState({ error: String(e?.message ?? e) })
+    if (id === latest) useDefs.setState({ error: String(e?.message ?? e) })
   } finally {
-    useDefs.setState({ busy: false })
+    if (id === latest) useDefs.setState({ busy: false })
   }
+}
+
+/** Reads the data when there is none (first visit, or cleared by a profile switch), unless that list is already being read. */
+export function ensureDefs(active: string[]) {
+  const { data, busy } = useDefs.getState()
+  if (data || (busy && latestFor === active.join('|'))) return
+  void loadDefs(active)
 }
 
 // Stable, distinct-ish color per mod for stripes and legends.

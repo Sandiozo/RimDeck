@@ -47,16 +47,26 @@ export function SearchView() {
   const [scope, setScope] = useState<Scope>('active')
   const [res, setRes] = useState<XmlSearchResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const seq = useRef(0)
 
+  // Only the newest search may show its result, so a slow earlier one can't replace it.
   const run = async (query = q, sc = scope) => {
     if (query.trim().length < 2) return
+    const id = ++seq.current
     setBusy(true)
+    setError('')
     try {
-      const pids = sc === 'active' ? s.active : [...new Set(s.app!.mods.map((m) => m.packageId))]
-      setRes(await api.searchXml(query, pids))
+      const pids = sc === 'active' ? s.active : [...new Set((s.app?.mods ?? []).map((m) => m.packageId))]
+      const r = await api.searchXml(query, pids)
+      if (id === seq.current) setRes(r)
+    } catch (e: any) {
+      if (id !== seq.current) return
+      setRes(null)
+      setError(String(e?.message ?? e))
     } finally {
-      setBusy(false)
+      if (id === seq.current) setBusy(false)
     }
   }
 
@@ -117,6 +127,8 @@ export function SearchView() {
           <FileSearch size={14} /> {busy ? 'Searching…' : 'Search'}
         </button>
       </div>
+
+      {error && <div className="banner err" style={{ marginBottom: 12 }}>Search failed: {error}</div>}
 
       {res && (
         <>

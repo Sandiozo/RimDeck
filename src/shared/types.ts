@@ -264,6 +264,40 @@ export type AppEvent =
   | { type: 'game-exited' }
   | { type: 'log-changed' }
   | { type: 'downloads'; state: DownloadsState }
+  /** RimDeck logged an error of its own; the interface fetches the crash status to tell the user. */
+  | { type: 'problem-logged' }
+
+/** One line of RimDeck's own error log (<userData>/logs/crash.log), with personal paths already removed. */
+export interface CrashEntry {
+  id: string
+  time: string // ISO, first time it happened
+  last?: string // ISO, last repeat
+  count?: number // how often it happened in a row
+  version: string
+  dev?: boolean // logged by a development run
+  source: 'main' | 'renderer' | 'window'
+  kind: string
+  message: string
+  stack?: string
+  seen?: boolean // the user has been told about it
+}
+
+export interface CrashStatus {
+  /** The previous run of the installed app ended without closing normally. */
+  abnormalEnd: boolean
+  /** Logged errors not yet acknowledged, newest first (a few at most). */
+  errors: CrashEntry[]
+  unseen: number
+  /** Settings files that could not be read this run and were set aside. */
+  damaged: { file: string; keptAs: string }[]
+}
+
+export interface BugReport {
+  text: string // the full report, Markdown
+  title: string
+  url: string // a new GitHub issue, filled in with as much as fits
+  cut: boolean // the link holds a shortened report
+}
 
 export type DownloadStatus = 'queued' | 'downloading' | 'installing' | 'done' | 'failed' | 'cancelled'
 

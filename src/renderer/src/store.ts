@@ -18,8 +18,9 @@ import type {
 } from '@shared/types'
 import { sortMods, type SortResult } from '@shared/sort'
 import { validate } from '@shared/validate'
-import { baseId, isTop, OFFICIAL_ORDER, resolver } from '@shared/graph'
+import { baseId, depProviders, isTop, OFFICIAL_ORDER, resolver } from '@shared/graph'
 import { api } from './api'
+import { revealMod } from './reveal'
 
 export type View = 'mods' | 'problems' | 'saves' | 'logs' | 'textures' | 'search' | 'performance' | 'research' | 'items' | 'modsettings' | 'lists' | 'downloads' | 'settings'
 
@@ -32,9 +33,9 @@ export interface Toast {
 export interface Bisect {
   original: string[]
   suspects: string[]
-  testing: string[]
+  testing: string[] // every suspect that is turned on in this step
   step: number
-  culprit?: string
+  culprit?: string // set when the search is done; if several suspects are left they need each other and can't be tested apart
 }
 
 interface Derived {
@@ -71,12 +72,16 @@ interface Store extends Derived {
   downloads: DownloadsState | null
   updates: UpdateReport | null
   checkingUpdates: boolean
+  launching: boolean // true while Play or Continue is saving and starting the game
   collection: WorkshopCollection | null
   collectionApplied: string[] | null // workshop ids that were installed when the collection was last applied
   collectionFocus: number // bumped to focus the collection input
 
   boot(): Promise<void>
+  /** Rescans the mod folders. */
   reload(): Promise<void>
+  /** Picks up the main process's state without rescanning (for when it has just rescanned). */
+  refreshState(): Promise<void>
   setView(v: View): void
   refreshXml(): Promise<void>
   refreshChanges(): Promise<void>
@@ -131,8 +136,17 @@ let xmlReport: XmlReport | null = null
 // The helper mod behind the Continue button (see src/main/core/continue.ts).
 const CONTINUE_ID = 'rimdeck.continue'
 
-let xmlFor = ''
+let xmlFor = '' // the active set the current report was made for
+let xmlStarted = false
+let xmlSeq = 0 // only the newest request may set the report
 let xmlTimer: ReturnType<typeof setTimeout> | null = null
+
+// The list the open sort preview was worked out from.
+let sortedFrom: string[] = []
+
+// Mod meta edits go to the main process one at a time; it replaces a mod's whole entry on each call.
+let metaQueue: Promise<void> = Promise.resolve()
+let metaPending = 0
 
 function derive(app: AppState | null, rules: RulesBundle | null, active: string[]): Derived {
   const installed = new Map<string, ModInfo[]>()
@@ -177,7 +191,11 @@ function same(a: string[], b: string[]) {
 export const useStore = create<Store>((set, get) => {
   const commit = (active: string[], extra: Partial<Store> = {}, record = true) => {
     const s = get()
-    if (same(active, s.active) && !Object.keys(extra).length) return
+    // Same list: no undo step (it would look like Ctrl+Z does nothing).
+    if (same(active, s.active)) {
+      if (Object.keys(extra).length) set(extra)
+      return
+    }
     set({
       ...extra,
       active,
@@ -190,10 +208,17 @@ export const useStore = create<Store>((set, get) => {
 
   // Activating or deactivating changes which mods' XML matters; reordering alone doesn't.
   const scheduleXml = (active: string[]) => {
-    if (xmlFor && [...active].sort().join('|') !== xmlFor) {
+    if (xmlStarted && [...active].sort().join('|') !== xmlFor) {
       if (xmlTimer) clearTimeout(xmlTimer)
       xmlTimer = setTimeout(() => void get().refreshXml(), 800)
     }
+  }
+
+  const takeState = (app: AppState) => {
+    const s = get()
+    set({ app, ...derive(app, s.rules, s.active) })
+    void get().refreshXml()
+    void get().refreshChanges()
   }
 
   const sortOptions = () => {
@@ -214,6 +239,8 @@ export const useStore = create<Store>((set, get) => {
   const withDeps = (ids: string[], have: string[] = get().active): string[] => {
     const s = get()
     const resolve = resolver(s.installed.keys())
+    const inList = resolver(have)
+    const batch = new Set(ids)
     const out: string[] = []
     const seen = new Set(have)
     const visit = (id: string) => {
@@ -221,8 +248,13 @@ export const useStore = create<Store>((set, get) => {
       seen.add(id)
       const m = s.installed.get(id)?.[0]
       for (const d of m?.dependencies ?? []) {
-        const r = [d.packageId, ...(d.alternatives ?? [])].map(resolve).find(Boolean)
-        if (r && !have.includes(r)) visit(r)
+        const candidates = [d.packageId, ...(d.alternatives ?? [])]
+        // Already met by the named mod or an alternative in the list: nothing to add.
+        if (candidates.some((c) => inList(c))) continue
+        // Prefer a candidate that is being turned on anyway, then the first installed one.
+        const found = candidates.map(resolve)
+        const r = found.find((x) => x && (seen.has(x) || batch.has(x))) ?? found.find(Boolean)
+        if (r) visit(r)
       }
       out.push(id)
     }
@@ -256,6 +288,7 @@ export const useStore = create<Store>((set, get) => {
     downloads: null,
     updates: null,
     checkingUpdates: false,
+    launching: false,
     collection: null,
     collectionApplied: null,
     collectionFocus: 0,
@@ -272,22 +305,30 @@ export const useStore = create<Store>((set, get) => {
       api
         .getRules()
         .then((rules) => set({ rules, ...derive(get().app, rules, get().active) }))
-        .catch(() => get().toast('error', 'Could not load community rules'))
-      api.getDownloads().then((downloads) => set({ downloads }))
+        .catch((e) => get().toast('error', `Could not load community rules: ${e.message}`))
+      api
+        .getDownloads()
+        .then((downloads) => set({ downloads }))
+        .catch((e) => get().toast('error', `Could not read the download queue: ${e.message}`))
       void get().checkUpdates()
       void get().refreshXml()
       void get().refreshChanges()
     },
 
     async refreshXml() {
-      const s = get()
+      const seq = ++xmlSeq
+      xmlStarted = true
+      const active = get().active
       try {
-        const report = await api.xmlReport(s.active)
+        const report = await api.xmlReport(active)
+        if (seq !== xmlSeq) return // a newer request is on its way
         xmlReport = report
-        xmlFor = [...s.active].sort().join('|')
+        xmlFor = [...active].sort().join('|')
         const now = get()
         set({ xml: report, ...derive(now.app, now.rules, now.active) })
-      } catch {}
+      } catch {
+        // Keep the last good report; xmlFor is unchanged, so the next change of active mods tries again.
+      }
     },
 
     async refreshChanges() {
@@ -301,11 +342,11 @@ export const useStore = create<Store>((set, get) => {
     },
 
     async reload() {
-      const app = await api.refresh()
-      const s = get()
-      set({ app, ...derive(app, s.rules, s.active) })
-      void get().refreshXml()
-      void get().refreshChanges()
+      takeState(await api.refresh())
+    },
+
+    async refreshState() {
+      takeState(await api.getState())
     },
 
     setView: (view) => set({ view }),
@@ -320,20 +361,22 @@ export const useStore = create<Store>((set, get) => {
 
     showMod(pid) {
       set({ view: 'mods', selection: new Set([pid]), anchor: pid, focus: pid })
-      setTimeout(() => document.querySelector(`[data-pid="${CSS.escape(pid)}"]`)?.scrollIntoView({ block: 'center' }), 30)
+      // The mod lists render only the rows near their view, so they scroll to the mod themselves.
+      setTimeout(() => revealMod(pid) || document.querySelector(`[data-pid="${CSS.escape(pid)}"]`)?.scrollIntoView({ block: 'center' }), 30)
     },
 
+    // Not while the sort preview is open: Apply would then use a sort of the old list.
     undo() {
       const s = get()
       const prev = s.past[s.past.length - 1]
-      if (!prev) return
+      if (!prev || s.sortPreview) return
       set({ past: s.past.slice(0, -1), future: [s.active, ...s.future], active: prev, ...derive(s.app, s.rules, prev) })
       scheduleXml(prev)
     },
     redo() {
       const s = get()
       const next = s.future[0]
-      if (!next) return
+      if (!next || s.sortPreview) return
       set({ future: s.future.slice(1), past: [...s.past, s.active], active: next, ...derive(s.app, s.rules, next) })
       scheduleXml(next)
     },
@@ -395,12 +438,19 @@ export const useStore = create<Store>((set, get) => {
       const s = get()
       if (!s.app) return
       const result = sortMods(s.active, s.activeMap.size === s.active.length ? s.activeMap : fillMissing(s), sortOptions())
+      sortedFrom = s.active
       set({ sortPreview: result })
     },
     applySort() {
       const p = get().sortPreview
-      if (p) commit(p.order, { sortPreview: null })
-      get().toast('ok', p?.moves.length ? `Load order sorted: ${p.moves.length} mods moved` : 'Load order is already sorted')
+      if (!p) return
+      // The list changed after the preview was made: show a fresh preview instead of applying a stale one.
+      if (!same(sortedFrom, get().active)) {
+        get().previewSort()
+        return get().toast('info', 'The load order changed, so the sort was worked out again. Check it and apply.')
+      }
+      commit(p.order, { sortPreview: null })
+      get().toast('ok', p.moves.length ? `Load order sorted: ${p.moves.length} mods moved` : 'Load order is already sorted')
     },
     closeSort: () => set({ sortPreview: null }),
 
@@ -420,13 +470,17 @@ export const useStore = create<Store>((set, get) => {
       commit(get().saved)
     },
 
+    // Either way `saved` becomes what is on disk now, so "Keep current" shows the list as unsaved and Save writes it.
     async acceptExternal(reload) {
-      if (!reload) return set({ externalChange: false })
-      const config = await api.reloadConfig()
-      const s = get()
-      const active = config?.activeMods ?? []
-      set({ externalChange: false, saved: active, app: s.app && { ...s.app, config } })
-      commit(active)
+      try {
+        const config = await api.reloadConfig()
+        const s = get()
+        const onDisk = config?.activeMods ?? []
+        set({ externalChange: false, saved: onDisk, app: s.app && { ...s.app, config } })
+        if (reload) commit(onDisk)
+      } catch (e: any) {
+        get().toast('error', `Could not read ModsConfig.xml: ${e.message}`)
+      }
     },
 
     applyFix(fix) {
@@ -457,10 +511,35 @@ export const useStore = create<Store>((set, get) => {
       }
     },
 
+    // Shown at once, so the next edit builds on this one, then sent in order. The main process replaces the
+    // mod's whole entry, so two quick edits sent side by side could otherwise undo each other.
     async setMeta(pid, meta) {
-      const user = await api.setModMeta(pid, meta)
       const s = get()
-      if (s.app) set({ app: { ...s.app, user } })
+      if (!s.app) return
+      const value = meta && Object.values(meta).some((v) => (Array.isArray(v) ? v.length : v)) ? meta : null
+      const all = { ...s.app.user.meta }
+      if (value) all[pid] = value
+      else delete all[pid]
+      set({ app: { ...s.app, user: { ...s.app.user, meta: all } } })
+      metaPending++
+      const run = metaQueue.then(async () => {
+        try {
+          const user = await api.setModMeta(pid, value)
+          // Only the last answer is complete; earlier ones lack the edits still waiting.
+          const now = get()
+          if (metaPending === 1 && now.app) set({ app: { ...now.app, user } })
+        } catch (e: any) {
+          get().toast('error', `Could not save mod details: ${e.message}`)
+          // Show what is really stored again, unless more edits are waiting to be sent.
+          const state = metaPending === 1 ? await api.getState().catch(() => null) : null
+          const now = get()
+          if (state && metaPending === 1 && now.app) set({ app: { ...now.app, user: state.user } })
+        } finally {
+          metaPending--
+        }
+      })
+      metaQueue = run
+      return run
     },
 
     async setUser(patch) {
@@ -488,14 +567,24 @@ export const useStore = create<Store>((set, get) => {
     },
 
     async launch() {
-      const s = get()
-      // Never start the game with a load order that failed to save.
-      if (!same(s.active, s.saved) && !(await s.save())) return
-      const r = await api.launch()
-      get().toast(r.ok ? 'ok' : 'error', r.message)
+      if (get().launching) return // a second click or F5 while the first start is still going
+      set({ launching: true })
+      try {
+        const s = get()
+        // Never start the game with a load order that failed to save.
+        if (!same(s.active, s.saved) && !(await s.save())) return
+        const r = await api.launch()
+        get().toast(r.ok ? 'ok' : 'error', r.message)
+      } catch (e: any) {
+        get().toast('error', `Could not start RimWorld: ${e.message}`)
+      } finally {
+        set({ launching: false })
+      }
     },
 
     async continueGame(saveFile) {
+      if (get().launching) return
+      set({ launching: true })
       try {
         const file = saveFile ?? (await api.latestSave())?.file
         if (!file) return get().toast('error', 'No saves found for this install')
@@ -512,7 +601,9 @@ export const useStore = create<Store>((set, get) => {
         const name = file.split(/[\\/]/).pop()!.replace(/\.rws$/i, '')
         get().toast(r.ok ? 'ok' : 'error', r.ok ? `Starting RimWorld; “${name}” opens once the game has loaded` : r.message)
       } catch (e: any) {
-        get().toast('error', e.message)
+        get().toast('error', `Could not start RimWorld: ${e.message}`)
+      } finally {
+        set({ launching: false })
       }
     },
 
@@ -612,27 +703,52 @@ export const useStore = create<Store>((set, get) => {
     closeCollection: () => set({ collection: null, collectionApplied: null }),
   }
 
-  // Keep the first half of the suspects (plus whatever they depend on), disable the rest, and save.
+  // Keep about half of the suspects on (plus the suspects they depend on), turn the other suspects off, and save.
+  // `testing` lists every suspect that is on, so the answer splits the suspects correctly.
   function applyBisectStep() {
     const s = get()
     const b = s.bisect!
-    const half = b.suspects.slice(0, Math.ceil(b.suspects.length / 2))
+    const suspectSet = new Set(b.suspects)
     const resolve = resolver(b.original)
-    const needed = new Set(half)
-    const stack = [...half]
-    while (stack.length) {
-      const m = s.installed.get(stack.pop()!)?.[0]
-      for (const d of m?.dependencies ?? []) {
-        const r = resolve(d.packageId)
-        if (r && !needed.has(r)) {
-          needed.add(r)
-          stack.push(r)
+    // The suspects that have to be on for `ids` to load. Any one provider of a dependency will do, and
+    // mods that are not suspects are always on.
+    const withNeeds = (ids: string[]) => {
+      const on = new Set(ids)
+      const stack = [...ids]
+      while (stack.length) {
+        for (const d of s.installed.get(stack.pop()!)?.[0]?.dependencies ?? []) {
+          const providers = depProviders(d, resolve)
+          if (!providers.length || providers.some((p) => on.has(p) || !suspectSet.has(p))) continue
+          on.add(providers[0])
+          stack.push(providers[0])
         }
       }
+      return on
     }
-    const suspectSet = new Set(b.suspects)
-    const list = b.original.filter((id) => !suspectSet.has(id) || needed.has(id))
-    set({ bisect: { ...b, testing: half } })
+    const n = b.suspects.length
+    const target = Math.ceil(n / 2)
+    let testing = new Set<string>()
+    for (const id of b.suspects) {
+      if (testing.size >= target) break
+      if (testing.has(id)) continue
+      const next = withNeeds([...testing, id])
+      if (next.size <= target) testing = next
+    }
+    // Every suspect needs more than half of the others: take the smallest group that still leaves some out.
+    if (!testing.size)
+      for (const id of b.suspects) {
+        const next = withNeeds([id])
+        if (next.size < n && (!testing.size || next.size < testing.size)) testing = next
+      }
+    if (!testing.size) {
+      // Each suspect needs all the others, so they can't be tested apart: report them together.
+      set({ bisect: { ...b, testing: [], culprit: b.suspects[0] } })
+      commit(b.original)
+      void get().save()
+      return
+    }
+    const list = b.original.filter((id) => !suspectSet.has(id) || testing.has(id))
+    set({ bisect: { ...b, testing: b.suspects.filter((id) => testing.has(id)) } })
     commit(list)
     void get().save()
   }

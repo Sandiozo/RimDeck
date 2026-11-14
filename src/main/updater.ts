@@ -1,5 +1,7 @@
 import { app, shell } from 'electron'
 import updaterPkg from 'electron-updater'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AppEvent, UpdateState } from '../shared/types.ts'
 
 const { autoUpdater } = updaterPkg
@@ -8,6 +10,17 @@ const { autoUpdater } = updaterPkg
 // macOS only installs updates for signed apps, so there RimDeck reports the new version and opens
 // its download page instead.
 const manual = process.platform === 'darwin'
+// The .deb package marks itself with resources/package-type; electron-updater then installs the new
+// .deb through the system package manager, which asks for an admin password. That should only happen
+// when the user picks the restart, not as a surprise after closing the app.
+const systemPackage = (() => {
+  if (process.platform !== 'linux') return false
+  try {
+    return /^(deb|rpm|pacman)$/.test(readFileSync(join(process.resourcesPath, 'package-type'), 'utf8').trim())
+  } catch {
+    return false
+  }
+})()
 const RELEASES = 'https://github.com/Sandiozo/RimDeck/releases/latest'
 let state: UpdateState = { phase: 'idle', current: app.getVersion() }
 let emit: (e: AppEvent) => void = () => {}
@@ -21,7 +34,7 @@ export function setupUpdater(send: (e: AppEvent) => void) {
   emit = send
   if (!app.isPackaged) return
   autoUpdater.autoDownload = !manual
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = !systemPackage
   autoUpdater.on('checking-for-update', () => setState({ phase: 'checking', error: undefined }))
   autoUpdater.on('update-not-available', () => setState({ phase: 'none', checkedAt: Date.now() }))
   autoUpdater.on('update-available', (info) => setState(manual ? { phase: 'available', version: info.version, checkedAt: Date.now() } : { phase: 'downloading', version: info.version, percent: 0 }))

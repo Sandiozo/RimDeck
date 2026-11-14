@@ -99,12 +99,28 @@ export function TexturesView() {
     )
   }
 
+  // One pick or undo at a time, so a double-click doesn't send the request twice.
+  const [working, setWorking] = useState(false)
+  const workingRef = useRef(false)
+  const once = async (job: () => Promise<void>) => {
+    if (workingRef.current) return
+    workingRef.current = true
+    setWorking(true)
+    try {
+      await job()
+    } finally {
+      workingRef.current = false
+      setWorking(false)
+    }
+  }
+
   // Copies one texture into the "RimDeck Texture Picks" mod, which is kept active and last so the pick wins.
-  const pick = async (pid: string, c: Ordered) => {
+  const pick = (pid: string, c: Ordered) => once(async () => {
     const e = c.order.find((x) => x.packageId === pid)!
     try {
       const r = await api.pickTexture(c.key, pid, e.file, e.dds)
-      if (r.created) await s.reload()
+      // The main process has already rescanned when it created the picks mod.
+      if (r.created) await s.refreshState()
       const st = useStore.getState()
       if (!st.active.includes(PICKS)) st.activate([PICKS])
       else if (st.active[st.active.length - 1] !== PICKS) st.move([PICKS], st.active.length)
@@ -114,12 +130,16 @@ export function TexturesView() {
     } catch (err: any) {
       s.toast('error', err.message)
     }
-  }
-  const unpick = async (c: Ordered) => {
-    await api.unpickTexture(c.key)
-    await scan(useStore.getState().active)
-    s.toast('ok', 'Texture pick removed')
-  }
+  })
+  const unpick = (c: Ordered) => once(async () => {
+    try {
+      await api.unpickTexture(c.key)
+      await scan(useStore.getState().active)
+      s.toast('ok', 'Texture pick removed')
+    } catch (err: any) {
+      s.toast('error', `Could not remove the pick: ${err.message}`)
+    }
+  })
 
   return (
     <div className="tex-page">
@@ -229,7 +249,7 @@ export function TexturesView() {
         </section>
 
         <section className="pane">
-          {current ? <Compare key={current.key} c={current} name={name} pos={pos} onWin={makeWin} onPick={pick} onUnpick={unpick} /> : <div className="empty">Select a texture to compare.</div>}
+          {current ? <Compare key={current.key} c={current} name={name} pos={pos} busy={working || busy} onWin={makeWin} onPick={pick} onUnpick={unpick} /> : <div className="empty">Select a texture to compare.</div>}
         </section>
       </div>
     </div>
@@ -240,6 +260,7 @@ function Compare({
   c,
   name,
   pos,
+  busy,
   onWin,
   onPick,
   onUnpick,
@@ -247,6 +268,7 @@ function Compare({
   c: Ordered
   name: (pid: string) => string
   pos: Map<string, number>
+  busy: boolean
   onWin: (pid: string, c: Ordered) => void
   onPick: (pid: string, c: Ordered) => void
   onUnpick: (c: Ordered) => void
@@ -256,7 +278,8 @@ function Compare({
   const [pixelated, setPixelated] = useState(true)
   const winner = c.order[c.order.length - 1]
   const [other, setOther] = useState(c.order[c.order.length - 2].packageId)
-  const b = c.order.find((e) => e.packageId === other) ?? c.order[0]
+  // Never the winner itself: after "Mod wins all" the remembered mod may be the one now shown in game.
+  const b = c.order.slice(0, -1).find((e) => e.packageId === other) ?? c.order[c.order.length - 2]
   const [split, setSplit] = useState(50)
   const imgClass = 'tex-img' + (pixelated ? ' px' : '')
 
@@ -314,18 +337,18 @@ function Compare({
                       {picked?.packageId === e.packageId && <span className="chip accent">Picked</span>}
                       {e.dds && <span className="chip" title="A .dds copy exists; the game may load that instead">dds</span>}
                       <span className="grow" />
-                      <button className="btn sm ghost icon" title="Show file" onClick={() => api.showItem(e.file)}>
+                      <button className="btn sm ghost icon" title="Show file" aria-label="Show file" onClick={() => api.showItem(e.file)}>
                         <FolderOpen size={12} />
                       </button>
                       {e.packageId === PICKS ? (
-                        <button className="btn sm" title="Delete the copied texture so the load order decides again" onClick={() => onUnpick(c)}>
+                        <button className="btn sm" title="Delete the copied texture so the load order decides again" disabled={busy} onClick={() => onUnpick(c)}>
                           <Undo2 size={12} /> Undo pick
                         </button>
                       ) : (
                         picked?.packageId !== e.packageId &&
                         (!isWinner || picked) && (
                           <>
-                            <button className="btn sm primary" title="Use this version for this texture only (copied into the RimDeck Texture Picks mod)" onClick={() => onPick(e.packageId, c)}>
+                            <button className="btn sm primary" title="Use this version for this texture only (copied into the RimDeck Texture Picks mod)" disabled={busy} onClick={() => onPick(e.packageId, c)}>
                               <Check size={12} /> Use this one
                             </button>
                             {!isWinner && (
@@ -406,7 +429,10 @@ function Diff({ a, b, pixelated }: { a: string; b: string; pixelated: boolean })
   const ref = useRef<HTMLCanvasElement>(null)
   const [stats, setStats] = useState<string>('Comparing…')
   useEffect(() => {
-    if (!isViewable(a) || !isViewable(b)) return setStats('Difference needs PNG or JPG on both sides.')
+    // A new pair starts blank, so the previous pair's picture and numbers are never shown for it.
+    if (ref.current) ref.current.width = 0
+    if (!isViewable(a) || !isViewable(b)) return setStats('No difference view for this format. It works with PNG, JPG and DDS files.')
+    setStats('Comparing…')
     let cancelled = false
     Promise.all([loadImage(imgUrl(a)), loadImage(imgUrl(b))])
       .then(([ia, ib]) => {
@@ -448,7 +474,7 @@ function Diff({ a, b, pixelated }: { a: string; b: string; pixelated: boolean })
         const sizeNote = ib.naturalWidth !== w || ib.naturalHeight !== h ? ` · sizes differ (${w}×${h} vs ${ib.naturalWidth}×${ib.naturalHeight}), compared at ${w}×${h}` : ''
         setStats(changed === 0 ? `Identical pixels${sizeNote}` : `${pct < 0.1 ? '<0.1' : pct.toFixed(1)}% of pixels differ${sizeNote}`)
       })
-      .catch(() => setStats('Could not load the images.'))
+      .catch(() => !cancelled && setStats('Could not load the images.'))
     return () => {
       cancelled = true
     }

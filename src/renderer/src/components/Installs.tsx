@@ -3,11 +3,17 @@ import { create } from 'zustand'
 import { FolderOpen, Pencil, Plus, Trash } from 'lucide-react'
 import type { InstallSummary } from '@shared/types'
 import { useStore } from '../store'
-import { api } from '../api'
+import { api, platform } from '../api'
 
 export const useInstalls = create<{ list: InstallSummary[] | null; load: () => Promise<void> }>((set) => ({
   list: null,
-  load: async () => set({ list: await api.listInstalls() }),
+  load: async () => {
+    try {
+      set({ list: await api.listInstalls() })
+    } catch (e: any) {
+      useStore.getState().toast('error', `Could not list game installs: ${e?.message ?? e}`)
+    }
+  },
 }))
 
 /** Settings panel: list, add, rename and remove installs. */
@@ -15,6 +21,7 @@ export function InstallsPanel() {
   const s = useStore()
   const { list, load } = useInstalls()
   const [adding, setAdding] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
   const [gameDir, setGameDir] = useState('')
   const [separate, setSeparate] = useState(true)
@@ -29,9 +36,12 @@ export function InstallsPanel() {
     const p = await api.pickFolder('RimWorld game folder')
     if (!p) return
     setGameDir(p)
-    if (!dataFolder) setDataFolder(p.replace(/[\\/]+$/, '') + '\\RimDeckData')
+    if (!dataFolder) setDataFolder(p.replace(/[\\/]+$/, '') + (platform === 'win32' ? '\\' : '/') + 'RimDeckData')
   }
   const add = async () => {
+    // A second click while the first is still adding would add the install twice.
+    if (busy) return
+    setBusy(true)
     try {
       await api.addInstall({ name, gameDir, dataFolder: separate ? dataFolder : undefined })
       await load()
@@ -42,6 +52,8 @@ export function InstallsPanel() {
       s.toast('ok', 'Install added. Create or edit a profile to use it.')
     } catch (e: any) {
       s.toast('error', e.message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -121,7 +133,7 @@ export function InstallsPanel() {
           </div>
           <div className="row">
             <span style={{ width: 120 }} className="muted">Game folder</span>
-            <input className="input grow mono" value={gameDir} placeholder="Folder with RimWorldWin64.exe and Data\Core" onChange={(e) => setGameDir(e.target.value)} />
+            <input className="input grow mono" value={gameDir} placeholder="The folder RimWorld is installed in" onChange={(e) => setGameDir(e.target.value)} />
             <button className="btn icon" title="Browse for the game folder" aria-label="Browse for the game folder" onClick={browseGame}>
               <FolderOpen size={14} />
             </button>
@@ -138,6 +150,8 @@ export function InstallsPanel() {
               <input className="input grow mono" value={dataFolder} onChange={(e) => setDataFolder(e.target.value)} />
               <button
                 className="btn icon"
+                title="Browse for the data folder"
+                aria-label="Browse for the data folder"
                 onClick={async () => {
                   const p = await api.pickFolder('Folder for this install’s saves and config')
                   if (p) setDataFolder(p)
@@ -156,7 +170,7 @@ export function InstallsPanel() {
             <button className="btn" onClick={() => setAdding(false)}>
               Cancel
             </button>
-            <button className="btn primary" disabled={!gameDir.trim() || (separate && !dataFolder.trim())} onClick={add}>
+            <button className="btn primary" disabled={busy || !gameDir.trim() || (separate && !dataFolder.trim())} onClick={add}>
               Add install
             </button>
           </div>

@@ -4,14 +4,19 @@ import { dirname, join } from 'node:path'
 import type { LogEntry, LogReport } from '../../shared/types.ts'
 import { defaultConfigDir } from './paths.ts'
 
+// Where Unity writes Player.log on each platform; a custom -savedatafolder doesn't move it.
+function unityPlayerLog(): string {
+  const home = homedir()
+  if (process.platform === 'win32') return join(home, 'AppData', 'LocalLow', 'Ludeon Studios', 'RimWorld by Ludeon Studios', 'Player.log')
+  if (process.platform === 'darwin') return join(home, 'Library', 'Logs', 'Ludeon Studios', 'RimWorld by Ludeon Studios', 'Player.log')
+  return join(home, '.config', 'unity3d', 'Ludeon Studios', 'RimWorld by Ludeon Studios', 'Player.log')
+}
+
 export async function findPlayerLog(configDir: string): Promise<string | null> {
   const base = dirname(configDir)
   let best: { p: string; t: number } | null = null
-  // A custom -savedatafolder doesn't move Unity's log, so the default location is checked too.
-  const fallback = join(dirname(defaultConfigDir()), 'Logs', 'Player.log')
-  const mac = join(homedir(), 'Library', 'Logs', 'Ludeon Studios', 'RimWorld by Ludeon Studios', 'Player.log')
-  const candidates = [join(base, 'Player.log'), join(base, 'Logs', 'Player.log'), fallback]
-  if (process.platform === 'darwin') candidates.push(mac)
+  // Next to the save data folder in use, in the default one's Logs folder, and where Unity puts it; newest wins.
+  const candidates = [...new Set([join(base, 'Player.log'), join(base, 'Logs', 'Player.log'), join(dirname(defaultConfigDir()), 'Logs', 'Player.log'), unityPlayerLog()])]
   for (const p of candidates) {
     try {
       const t = (await stat(p)).mtimeMs

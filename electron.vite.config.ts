@@ -6,6 +6,14 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': resolve('src/shared') } },
+    build: {
+      rolldownOptions: {
+        // The worker pool is its own file (out/main/pool.js) so it can be tried out without starting
+        // the app, from plain Node or the packaged app run as Node. The worker itself is a chunk made
+        // by the `?nodeWorker` import in index.ts.
+        input: { index: resolve('src/main/index.ts'), pool: resolve('src/main/workers/pool.ts') },
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

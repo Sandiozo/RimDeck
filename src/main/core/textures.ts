@@ -48,21 +48,21 @@ async function indexMod(mod: ModInfo, dirsToLoad: string[]): Promise<Map<string,
 
 const cache = new Map<string, { mtime: number; dirs: string; tex: Map<string, ModTex> }>()
 
+async function modTextures(m: ModInfo, active: Set<string>): Promise<Map<string, ModTex>> {
+  const load = effectiveDirs(m, (p) => active.has(p))
+  const dirs = load.join('|')
+  const c = cache.get(m.path)
+  // The picks mod changes without its About.xml changing, so it's always re-read.
+  if (c && c.mtime === m.mtime && c.dirs === dirs && m.packageId !== 'rimdeck.texturepicks') return c.tex
+  const tex = await indexMod(m, load)
+  cache.set(m.path, { mtime: m.mtime, dirs, tex })
+  return tex
+}
+
 export async function textureReport(mods: ModInfo[]): Promise<TextureReport> {
   const t = performance.now()
   const active = new Set(mods.map((m) => m.packageId))
-  const indexes = await Promise.all(
-    mods.map(async (m) => {
-      const load = effectiveDirs(m, (p) => active.has(p))
-      const dirs = load.join('|')
-      const c = cache.get(m.path)
-      // The picks mod changes without its About.xml changing, so it's always re-read.
-      if (c && c.mtime === m.mtime && c.dirs === dirs && m.packageId !== 'rimdeck.texturepicks') return c.tex
-      const tex = await indexMod(m, load)
-      cache.set(m.path, { mtime: m.mtime, dirs, tex })
-      return tex
-    }),
-  )
+  const indexes = await Promise.all(mods.map((m) => modTextures(m, active)))
   const owners = new Map<string, number[]>()
   const totals: Record<string, number> = {}
   let textures = 0
@@ -96,18 +96,18 @@ export async function textureLookup(mods: ModInfo[]) {
   const files = new Map<string, string>()
   const folders = new Map<string, string>()
   for (const m of mods) {
-    const load = effectiveDirs(m, (p) => active.has(p))
-    const dirs = load.join('|')
-    let c = cache.get(m.path)
-    if (!c || c.mtime !== m.mtime || c.dirs !== dirs) {
-      c = { mtime: m.mtime, dirs, tex: await indexMod(m, load) }
-      cache.set(m.path, c)
-    }
-    for (const [k, t] of c.tex) {
+    const tex = await modTextures(m, active)
+    // Folder -> its first texture by name (what a folder graphic shows first); later mods win, as for files.
+    const first = new Map<string, string>()
+    for (const [k, t] of tex) {
       files.set(k, t.file)
-      const f = k.slice(0, k.lastIndexOf('/'))
-      if (!folders.has(f)) folders.set(f, t.file)
+      const slash = k.lastIndexOf('/')
+      if (slash < 0) continue // directly in Textures/, not in a folder
+      const f = k.slice(0, slash)
+      const prev = first.get(f)
+      if (prev === undefined || k < prev) first.set(f, k)
     }
+    for (const [f, k] of first) folders.set(f, tex.get(k)!.file)
   }
   // Graphic_Multi adds _south/_north…; Graphic_StackCount/Random point at a folder.
   return (texPath: string, graphicClass: string): string | undefined => {

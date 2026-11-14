@@ -1,10 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { ArrowDownUp, Search, Layers, X, ListFilter } from 'lucide-react'
 import type { Issue, ModInfo, ModMeta } from '@shared/types'
 import { CATEGORY_LABEL } from '@shared/graph'
 import { categoryOf, useStore } from '../store'
 import { matchMod, NEW_DAYS } from '../lib'
-import { IssueBadge, ModIcon } from './ui'
+import { addRevealer } from '../reveal'
+import { buildOffsets } from '../virtual'
+import { cssPx, useVirtual } from '../useVirtual'
+import { IssueBadge, ModIcon, useEscape } from './ui'
 import { openContextMenu } from './ContextMenu'
 import { changedIds } from './Changes'
 
@@ -12,6 +15,20 @@ type Kind = 'active' | 'inactive'
 type InactiveSort = 'name' | 'updated' | 'author' | 'category'
 
 let dragPayload: { ids: string[]; from: Kind } | null = null
+// Set on drags that start in a mod list, so a drag from elsewhere (a file, some text) is never taken for one.
+const DRAG_TYPE = 'application/x-rimdeck-mods'
+
+// The list places its rows with these heights, so they come from the stylesheet (--row-h, --section-h).
+// Once the list is on screen a rendered row and label are measured as well, and those win if they differ.
+function readSizes(list: HTMLElement | null) {
+  const root = list ?? document.documentElement
+  const sizes = { row: cssPx(root, '--row-h'), label: cssPx(root, '--section-h') }
+  const row = list?.querySelector('.mod-row')
+  const label = list?.querySelector('.section-label')
+  if (row) sizes.row = row.getBoundingClientRect().height
+  if (label) sizes.label = label.getBoundingClientRect().height
+  return sizes
+}
 
 interface RowProps {
   pid: string
@@ -24,6 +41,7 @@ interface RowProps {
   issues?: Issue[]
   gameMajor: string
   onMouseDown: (e: MouseEvent, pid: string) => void
+  onClick: (e: MouseEvent, pid: string) => void
   onDouble: (pid: string) => void
   onDragStart: (e: DragEvent, pid: string) => void
 }
@@ -56,20 +74,20 @@ const QUICK_FILTERS: [string, string][] = [
 function FilterMenu({ query, setQuery }: { query: string; setQuery: (q: string) => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLSpanElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
     const close = (e: Event) => !ref.current?.contains(e.target as Node) && setOpen(false)
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     const blur = () => setOpen(false)
     window.addEventListener('mousedown', close)
-    window.addEventListener('keydown', esc as any)
     window.addEventListener('blur', blur)
     return () => {
       window.removeEventListener('mousedown', close)
-      window.removeEventListener('keydown', esc as any)
       window.removeEventListener('blur', blur)
     }
   }, [open])
+  // Escape closes only the menu, not also the search text or the selection.
+  useEscape(menuRef, () => setOpen(false), open)
   const tokens = query.split(/\s+/).filter(Boolean)
   const toggle = (t: string) => {
     setQuery((tokens.includes(t) ? tokens.filter((x) => x !== t) : [...tokens, t]).join(' '))
@@ -81,7 +99,7 @@ function FilterMenu({ query, setQuery }: { query: string; setQuery: (q: string) 
         <ListFilter size={13} />
       </button>
       {open && (
-        <div className="menu" style={{ position: 'absolute', right: -6, top: 26, width: 300, whiteSpace: 'nowrap' }}>
+        <div ref={menuRef} className="menu" style={{ position: 'absolute', right: -6, top: 26, width: 300, whiteSpace: 'nowrap' }}>
           {QUICK_FILTERS.map(([t, label]) => (
             <button key={t} onClick={() => toggle(t)}>
               <span className={'check' + (tokens.includes(t) ? ' on' : '')} />
@@ -110,6 +128,7 @@ const ModRow = memo(function ModRow(p: RowProps) {
       data-pid={p.pid}
       draggable={p.pid !== 'ludeon.rimworld'}
       onMouseDown={(e) => p.onMouseDown(e, p.pid)}
+      onClick={(e) => p.onClick(e, p.pid)}
       onDoubleClick={() => p.onDouble(p.pid)}
       onDragStart={(e) => p.onDragStart(e, p.pid)}
       onContextMenu={(e) => {
@@ -148,6 +167,9 @@ export function ModList({ kind }: { kind: Kind }) {
   const [sections, setSections] = useState(true)
   const [drop, setDrop] = useState<{ index: number; top: number } | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  // The row a drag started from. It stays rendered until the drag ends, wherever the list scrolls:
+  // if it left the page, its dragend would never reach this list.
+  const [dragPid, setDragPid] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const app = s.app!
   const meta = app.user.meta
@@ -180,11 +202,88 @@ export function ModList({ kind }: { kind: Kind }) {
 
   const visibleIds = useMemo(() => rows.map((r) => r.pid), [rows])
 
+  const showSections = kind === 'active' && sections && !query && app.settings.sortMode === 'grouped'
+  // A label goes above the first row of each category. Worked out over the whole list, so it is right
+  // wherever the rendered window starts.
+  const labels = useMemo(() => {
+    if (!showSections) return null
+    let last = ''
+    return rows.map((r) => {
+      const cat = categoryOf(s, r.pid)
+      const label = cat !== last ? CATEGORY_LABEL[cat as keyof typeof CATEGORY_LABEL] : null
+      last = cat
+      return label || null
+    })
+  }, [showSections, rows, s.app, s.rules, s.installed])
+
+  // Measured once rows are on screen; differences under half a pixel (from page zoom) are ignored.
+  const [sizes, setSizes] = useState(() => readSizes(null))
+  useLayoutEffect(() => {
+    const next = readSizes(listRef.current)
+    setSizes((cur) => (Math.abs(cur.row - next.row) < 0.5 && Math.abs(cur.label - next.label) < 0.5 ? cur : next))
+  }, [rows.length > 0, showSections])
+
+  // Only the rows near the view are rendered; each item is a row plus the label above it, if any.
+  const offsets = useMemo(() => buildOffsets(rows.length, (i) => sizes.row + (labels?.[i] ? sizes.label : 0)), [rows.length, labels, sizes])
+  const pinned = useMemo(() => {
+    const i = dragPid ? visibleIds.indexOf(dragPid) : -1
+    return i >= 0 ? [i] : undefined
+  }, [dragPid, visibleIds])
+  const { slots, spacer, scrollToIndex, offsetOf } = useVirtual({ ref: listRef, offsets, pinned })
+  // Like scrollIntoView on the row itself (the label above it is not part of it).
+  const scrollToRow = useCallback((i: number, align: 'nearest' | 'center') => scrollToIndex(i, align, sizes.row), [scrollToIndex, sizes.row])
+
   // Stable handlers keep the memoised rows from re-rendering on unrelated store changes.
   const idsRef = useRef(visibleIds)
   idsRef.current = visibleIds
+
+  // showMod (store.ts) scrolls to a mod through this, as its row may not be rendered. A mod this list
+  // does not show (it is in the other list, or this list's filter hides it) is left alone.
+  useLayoutEffect(
+    () =>
+      addRevealer((pid) => {
+        const i = idsRef.current.indexOf(pid)
+        if (i < 0) return false
+        scrollToRow(i, 'center')
+        return true
+      }),
+    [scrollToRow],
+  )
+
+  // After Alt+Up/Down, the moved rows' leading edge is scrolled into view once the list has updated.
+  const keepVisible = useRef<'first' | 'last' | null>(null)
+  useLayoutEffect(() => {
+    const which = keepVisible.current
+    if (!which) return
+    keepVisible.current = null
+    const sel = useStore.getState().selection
+    const i = which === 'first' ? visibleIds.findIndex((id) => sel.has(id)) : visibleIds.findLastIndex((id) => sel.has(id))
+    if (i >= 0) scrollToRow(i, 'nearest')
+  }, [visibleIds, scrollToRow])
+
+  // A drag whose dragend never reaches this list (its row left the page, for example because the drop
+  // removed it) must not leave a stale payload behind. No mouse events arrive while a drag is going
+  // on, so the next press anywhere means it is over.
+  useEffect(() => {
+    const reset = () => {
+      dragPayload = null
+      setDrop(null)
+      setDragOver(false)
+      setDragPid(null)
+    }
+    window.addEventListener('dragend', reset)
+    window.addEventListener('mousedown', reset, true)
+    return () => {
+      window.removeEventListener('dragend', reset)
+      window.removeEventListener('mousedown', reset, true)
+    }
+  }, [])
+  // A plain press on a row inside a multi-selection keeps the selection, so all of it can be
+  // dragged; if the press ends as a click instead of a drag, the selection narrows to that row.
+  const narrowTo = useRef<string | null>(null)
   const onMouseDown = useCallback((e: MouseEvent, pid: string) => {
     const st = useStore.getState()
+    narrowTo.current = null
     if (e.button !== 0) {
       if (!st.selection.has(pid)) st.select(pid)
       return
@@ -192,7 +291,15 @@ export function ModList({ kind }: { kind: Kind }) {
     if (e.ctrlKey || e.metaKey) st.select(pid, 'toggle')
     else if (e.shiftKey) st.select(pid, 'range', idsRef.current)
     else if (!st.selection.has(pid) || st.selection.size === 1) st.select(pid)
-    else st.setFocus(pid)
+    else {
+      st.setFocus(pid)
+      narrowTo.current = pid
+    }
+  }, [])
+  const onClick = useCallback((e: MouseEvent, pid: string) => {
+    if (narrowTo.current !== pid || e.ctrlKey || e.metaKey || e.shiftKey) return
+    narrowTo.current = null
+    useStore.getState().select(pid)
   }, [])
   const onDouble = useCallback((pid: string) => {
     const st = useStore.getState()
@@ -202,10 +309,13 @@ export function ModList({ kind }: { kind: Kind }) {
 
   const onDragStart = useCallback((e: DragEvent, pid: string) => {
     const st = useStore.getState()
+    narrowTo.current = null
     const ids = st.selection.has(pid) ? idsRef.current.filter((id) => st.selection.has(id)) : [pid]
     dragPayload = { ids, from: kind }
+    setDragPid(pid)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', ids.join('\n'))
+    e.dataTransfer.setData(DRAG_TYPE, kind)
     const ghost = document.createElement('div')
     ghost.textContent = ids.length > 1 ? `${ids.length} mods` : (st.installed.get(pid)?.[0]?.name ?? pid)
     Object.assign(ghost.style, { position: 'fixed', top: '-100px', padding: '6px 12px', borderRadius: '5px', background: 'var(--accent)', color: 'var(--on-accent)', font: '600 12px Segoe UI' })
@@ -215,7 +325,7 @@ export function ModList({ kind }: { kind: Kind }) {
   }, [kind])
 
   const onDragOver = (e: DragEvent) => {
-    if (!dragPayload) return
+    if (!dragPayload || !e.dataTransfer.types.includes(DRAG_TYPE)) return
     e.preventDefault()
     setDragOver(true)
     if (kind !== 'active') return
@@ -228,10 +338,8 @@ export function ModList({ kind }: { kind: Kind }) {
       const top = row.offsetTop + (after ? row.offsetHeight : 0)
       if (drop?.index !== index || drop.top !== top) setDrop({ index, top })
     } else if (!drop) {
-      // Each row has its own wrapper, so :last-of-type would match every row.
-      const rows = list.querySelectorAll<HTMLElement>('.mod-row')
-      const last = rows[rows.length - 1]
-      setDrop({ index: s.active.length, top: last ? last.offsetTop + last.offsetHeight : 4 })
+      // Below the last row (which may not be rendered): drop at the end.
+      setDrop({ index: s.active.length, top: rows.length ? offsetOf(rows.length) : 4 })
     }
     // Auto-scroll while dragging near the edges.
     const r = list.getBoundingClientRect()
@@ -262,23 +370,23 @@ export function ModList({ kind }: { kind: Kind }) {
     else if (e.key === 'Delete' && kind === 'active' && sel.length) s.deactivate(sel)
     else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && kind === 'active') {
       e.preventDefault()
+      const before = useStore.getState().active
       s.nudge(e.key === 'ArrowUp' ? -1 : 1)
+      if (useStore.getState().active !== before) keepVisible.current = e.key === 'ArrowUp' ? 'first' : 'last'
     } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault()
       const cur = s.focus ? visibleIds.indexOf(s.focus) : -1
-      const next = visibleIds[Math.max(0, Math.min(visibleIds.length - 1, cur + (e.key === 'ArrowUp' ? -1 : 1)))]
+      const at = Math.max(0, Math.min(visibleIds.length - 1, cur + (e.key === 'ArrowUp' ? -1 : 1)))
+      const next = visibleIds[at]
       if (next) {
         s.select(next, e.shiftKey ? 'range' : 'single', visibleIds)
-        listRef.current?.querySelector(`[data-pid="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' })
+        scrollToRow(at, 'nearest')
       }
     } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       useStore.setState({ selection: new Set(visibleIds) })
     } else if (e.key === 'Escape') s.clearSelection()
   }
-
-  const showSections = kind === 'active' && sections && !query && app.settings.sortMode === 'grouped'
-  let lastCat = ''
 
   return (
     <section className="pane">
@@ -334,12 +442,13 @@ export function ModList({ kind }: { kind: Kind }) {
           dragPayload = null
           setDrop(null)
           setDragOver(false)
+          setDragPid(null)
         }}
       >
-        {rows.map((r) => {
-          const cat = showSections ? categoryOf(s, r.pid) : ''
-          const label = showSections && cat !== lastCat ? CATEGORY_LABEL[cat as keyof typeof CATEGORY_LABEL] : null
-          lastCat = cat
+        {slots.map((slot) => {
+          if (slot.kind === 'gap') return spacer(slot)
+          const r = rows[slot.index]
+          const label = labels?.[slot.index]
           return (
             <div key={r.pid}>
               {label && <div className="section-label">{label}</div>}
@@ -354,6 +463,7 @@ export function ModList({ kind }: { kind: Kind }) {
                 issues={kind === 'active' ? s.issuesByPid.get(r.pid) : undefined}
                 gameMajor={app.gameMajor}
                 onMouseDown={onMouseDown}
+                onClick={onClick}
                 onDouble={onDouble}
                 onDragStart={onDragStart}
               />

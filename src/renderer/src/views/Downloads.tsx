@@ -5,6 +5,7 @@ import { parseWorkshopIds } from '@shared/workshop'
 import { useStore } from '../store'
 import { api, workshopUrl } from '../api'
 import { bytes, timeAgo } from '../lib'
+import { trashName } from '../removeMods'
 import { ModIcon } from '../components/ui'
 import { CollectionPanel } from './Collection'
 import { SteamAccountPanel } from './SteamAccount'
@@ -66,13 +67,14 @@ export function DownloadsView() {
   const since = active.length ? Math.min(...active.map((j) => j.addedAt)) : Infinity
   const batchDone = jobs.filter((j) => j.status === 'done' && (j.finishedAt ?? 0) >= since).length
 
-  // Every Workshop id that a "Download" fix anywhere in the current problems points at.
+  // Every Workshop id that a "Download" fix anywhere in the current problems points at, minus those already queued.
+  const activeKey = active.map((j) => j.workshopId).join(',')
   const missing = useMemo(() => {
     const ids = new Set<string>()
     for (const i of s.issues) for (const f of i.fixes) if (f.fix.type === 'download' && i.kind !== 'replacement') f.fix.workshopIds.forEach((id) => ids.add(id))
-    for (const j of active) ids.delete(j.workshopId)
+    for (const id of activeKey.split(',')) ids.delete(id)
     return [...ids]
-  }, [s.issues, active.length])
+  }, [s.issues, activeKey])
 
   const updates = s.updates?.updates ?? []
   const localUpdates = updates.filter((u) => u.source === 'local')
@@ -118,10 +120,12 @@ export function DownloadsView() {
         <div className="panel-body">
           <div className="kv">
             <span>Installs into</span>
-            <span className="mono ellipsis">
-              {d?.targetDir || <span style={{ color: 'var(--err)' }}>No local mods folder set</span>}
+            <span className="row" style={{ gap: 6, minWidth: 0 }}>
+              <span className="mono ellipsis" title={d?.targetDir || undefined}>
+                {d?.targetDir || <span style={{ color: 'var(--err)' }}>No local mods folder set</span>}
+              </span>
               {d?.targetDir && (
-                <button className="btn sm ghost icon" title="Open folder" onClick={() => api.openPath(d.targetDir)} style={{ marginLeft: 6 }}>
+                <button className="btn sm ghost icon" title="Open folder" aria-label="Open folder" style={{ flex: 'none' }} onClick={() => api.openPath(d.targetDir)}>
                   <FolderOpen size={12} />
                 </button>
               )}
@@ -254,7 +258,7 @@ export function DownloadsView() {
           {localUpdates.length > 1 && (
             <ConfirmButton
               label={<><Download size={12} /> Update all {localUpdates.length} local</>}
-              confirm="Old copies go to the Recycle Bin."
+              confirm={`Old copies go to the ${trashName}.`}
               onConfirm={() => s.download(localUpdates.map((u) => u.workshopId))}
             />
           )}
@@ -290,7 +294,7 @@ export function DownloadsView() {
                       ) : queued ? (
                         <span className="dim">Queued</span>
                       ) : (
-                        <ConfirmButton label={<><Download size={11} /> Update</>} confirm="Old copy goes to the Recycle Bin." onConfirm={() => s.download([u.workshopId])} />
+                        <ConfirmButton label={<><Download size={11} /> Update</>} confirm={`Old copy goes to the ${trashName}.`} onConfirm={() => s.download([u.workshopId])} />
                       )}
                       <button className="btn sm ghost icon" title="Workshop page" onClick={() => api.openUrl(workshopUrl(u.workshopId))}>
                         <ExternalLink size={12} />

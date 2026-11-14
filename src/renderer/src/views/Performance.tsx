@@ -7,26 +7,32 @@ import { api } from '../api'
 import { bytes, timeAgo } from '../lib'
 import { ModIcon } from '../components/ui'
 
-const usePerf = create<{ report: LoadReport | null; busy: boolean }>(() => ({ report: null, busy: false }))
+const usePerf = create<{ report: LoadReport | null; busy: boolean; failed: boolean }>(() => ({ report: null, busy: false, failed: false }))
 
 async function measure(active: string[]) {
-  usePerf.setState({ busy: true })
+  usePerf.setState({ busy: true, failed: false })
   try {
     usePerf.setState({ report: await api.loadReport(active) })
   } catch (e: any) {
+    usePerf.setState({ failed: true })
     useStore.getState().toast('error', `Could not measure load times: ${e.message}`)
   } finally {
     usePerf.setState({ busy: false })
   }
 }
 
-const secs = (ms: number) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`)
+// Rounds to whole seconds first, so 119.6 s reads "2m 0s" rather than "1m 60s".
+const secs = (ms: number) => {
+  if (ms < 59950) return `${(ms / 1000).toFixed(1)}s`
+  const t = Math.round(ms / 1000)
+  return `${Math.floor(t / 60)}m ${t % 60}s`
+}
 
 type SortKey = 'score' | 'textureBytes' | 'textures' | 'defs' | 'patches' | 'dllBytes'
 
 export function PerformanceView() {
   const s = useStore()
-  const { report, busy } = usePerf()
+  const { report, busy, failed } = usePerf()
   const [sortKey, setSortKey] = useState<SortKey>('score')
   const [limit, setLimit] = useState(60)
   useEffect(() => {
@@ -40,7 +46,8 @@ export function PerformanceView() {
   const slow = (report?.mods ?? []).filter((m) => m.slowPatches > 0).sort((a, b) => b.slowPatches - a.slowPatches)
   const bigTex = (report?.mods ?? []).filter((m) => m.textureBytes > 60 * 1048576).sort((a, b) => b.textureBytes - a.textureBytes)
   const name = (pid: string) => s.installed.get(pid)?.[0]?.name ?? pid
-  const max = report?.startup ? Math.max(...report.startup.phases.map((p) => p.ms)) : 1
+  // At least 1 ms, so an empty or all-zero log never divides by zero.
+  const max = Math.max(1, ...(report?.startup?.phases.map((p) => p.ms) ?? []))
 
   const th = (k: SortKey, children: React.ReactNode) => (
     <th style={{ cursor: 'pointer', color: sortKey === k ? 'var(--text)' : undefined }} onClick={() => setSortKey(k)}>
@@ -60,7 +67,13 @@ export function PerformanceView() {
         </button>
       </div>
 
-      {!report && <div className="panel"><div className="empty">Reading the textures, sounds, XML and code of every active mod… The first run takes a few seconds.</div></div>}
+      {!report && (
+        <div className="panel">
+          <div className="empty">
+            {failed && !busy ? 'Load times could not be measured. Press Refresh to try again.' : 'Reading the textures, sounds, XML and code of every active mod… The first run takes a few seconds.'}
+          </div>
+        </div>
+      )}
 
       {report && (
         <>
@@ -68,7 +81,13 @@ export function PerformanceView() {
             <div className="panel-head">
               <Gauge size={16} color="var(--accent-text)" />
               <h3 className="grow">
-                {report.startup ? `Last startup: ${secs(report.startup.toMenu)} to the main menu` : 'No startup timing found in the game log'}
+                {report.startup ? (
+                  <>
+                    Last startup: <span style={{ textTransform: 'none' }}>{secs(report.startup.toMenu)}</span> to the main menu
+                  </>
+                ) : (
+                  'No startup timing found in the game log'
+                )}
               </h3>
               {report.startup && <span className="dim" style={{ fontSize: 12 }}>{timeAgo(report.startup.when)}{report.startup.saveLoad ? ` · loading a save took ${secs(report.startup.saveLoad)}` : ''}</span>}
             </div>

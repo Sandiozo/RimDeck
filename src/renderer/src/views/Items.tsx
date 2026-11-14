@@ -3,7 +3,7 @@ import { Boxes, FileText, RefreshCw, Search, TriangleAlert, X, FileSearch } from
 import type { ItemDef } from '@shared/types'
 import { useStore } from '../store'
 import { api, imgUrl } from '../api'
-import { loadDefs, modColor, useDefs } from '../defStore'
+import { ensureDefs, loadDefs, modColor, useDefs } from '../defStore'
 import { ModIcon, Seg } from '../components/ui'
 
 type Mode = 'names' | 'replaced' | 'all'
@@ -40,9 +40,8 @@ export function ItemsView() {
   const [selected, setSelected] = useState<string | null>(null)
   const [limit, setLimit] = useState(200)
 
-  useEffect(() => {
-    if (!data && !busy) void loadDefs(s.active)
-  }, [])
+  // Reads on first visit and again when the data is cleared (a profile switch) while this page is open.
+  useEffect(() => ensureDefs(s.active), [data])
   const stale = !!data && scannedFor !== s.active.join('|')
   const items = data?.items ?? []
   const name = (pid: string) => s.installed.get(pid)?.[0]?.name ?? pid
@@ -209,7 +208,7 @@ export function ItemsView() {
                 </div>
               ))}
               {data && !groups.length && <div className="empty">{mode === 'names' ? 'No item names are shared between mods.' : 'No items are replaced by another mod.'}</div>}
-              {!data && <div className="empty">Reading items…</div>}
+              {!data && <div className="empty">{error && !busy ? 'Items could not be read.' : 'Reading items…'}</div>}
             </div>
           </section>
           <section className="pane" style={{ overflow: 'auto' }}>

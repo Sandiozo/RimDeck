@@ -47,6 +47,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       # Starts the packaged app and asks its debug connection for its state; fails if it doesn't start.
+      # Then has it parse a little XML in a worker thread; fails if workers can't load from the package.
       - name: Smoke test
         shell: bash
         run: |
@@ -62,6 +63,8 @@ jobs:
             sleep 2
           done
           node -e "const s=require('./state.json'); if (!s.ok) { console.error(s.error); process.exit(1) } console.log('RimDeck started; platform paths:', JSON.stringify(s.result.settings.paths))" || { cat app.log; exit 1; }
+          curl -sf -X POST -d '[]' http://127.0.0.1:5199/api/workerCheck -o worker.json || { cat app.log; exit 1; }
+          node -e "const w=require('./worker.json'); if (!w.ok || w.result.worker !== true) { console.error('Worker threads unavailable:', JSON.stringify(w)); process.exit(1) } console.log('Worker threads work:', JSON.stringify(w.result))" || { cat app.log; exit 1; }
 
       # Kept for a week either way, so a test run (started by hand with a branch name) can be tried out.
       - uses: actions/upload-artifact@v4

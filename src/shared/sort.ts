@@ -77,13 +77,24 @@ export function sortMods(order: string[], mods: Map<string, ModInfo>, opts: Sort
   const remaining = new Set(order)
   const result: string[] = []
   const cycles: string[][] = []
+  const notInLoop = new Set<string>() // taking mods out never creates a loop, so this stays true
   while (remaining.size) {
     let best: string | undefined
     for (const id of remaining) if (indeg.get(id) === 0 && (!best || cmp(id, best) < 0)) best = id
     if (!best) {
-      const stuck = [...remaining].sort(cmp)
-      cycles.push(findCycle(stuck[0], out, remaining) ?? [stuck[0]])
-      best = stuck[0]
+      // Every mod left waits on another one that is left, so there is a loop. Break it at the best-ranked
+      // mod that is really in a loop; mods that only come after a loop keep waiting for it.
+      for (const id of [...remaining].sort(cmp)) {
+        const loop = notInLoop.has(id) ? null : loopThrough(id, out, remaining)
+        if (!loop) {
+          notInLoop.add(id)
+          continue
+        }
+        cycles.push(loop)
+        best = id
+        break
+      }
+      best ??= [...remaining].sort(cmp)[0] // not expected: with no ready mod there is always a loop
     }
     remaining.delete(best)
     result.push(best)
@@ -93,27 +104,27 @@ export function sortMods(order: string[], mods: Map<string, ModInfo>, opts: Sort
   return { order: result, moves: explainMoves(order, result, edges, tier, opts), cycles, edges }
 }
 
-function findCycle(start: string, out: Map<string, string[]>, alive: Set<string>): string[] | null {
-  const stack: string[] = []
-  const onStack = new Set<string>()
-  const visited = new Set<string>()
-  const dfs = (n: string): string[] | null => {
-    visited.add(n)
-    stack.push(n)
-    onStack.add(n)
+// The shortest loop through `start` among the mods still waiting (in load-before order), or null when
+// `start` is not in a loop itself.
+function loopThrough(start: string, out: Map<string, string[]>, alive: Set<string>): string[] | null {
+  const prev = new Map<string, string>()
+  const queue = [start]
+  for (let i = 0; i < queue.length; i++) {
+    const n = queue[i]
     for (const m of out.get(n) ?? []) {
       if (!alive.has(m)) continue
-      if (onStack.has(m)) return stack.slice(stack.indexOf(m))
-      if (!visited.has(m)) {
-        const c = dfs(m)
-        if (c) return c
+      if (m === start) {
+        const loop = [n]
+        while (loop[0] !== start) loop.unshift(prev.get(loop[0])!)
+        return loop
+      }
+      if (!prev.has(m)) {
+        prev.set(m, n)
+        queue.push(m)
       }
     }
-    stack.pop()
-    onStack.delete(n)
-    return null
   }
-  return dfs(start)
+  return null
 }
 
 // Minimal set of moved mods = everything outside the longest increasing subsequence of old positions.

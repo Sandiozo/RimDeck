@@ -1,6 +1,8 @@
 import type {
   AppEvent,
   AppState,
+  BugReport,
+  CrashStatus,
   DefData,
   InstallSummary,
   LoadReport,
@@ -114,6 +116,18 @@ export const api = {
   updateCheck: (): Promise<UpdateState> => invoke('updateCheck'),
   updateInstall: (): Promise<void> => invoke('updateInstall'),
   appVersion: (): Promise<string> => invoke('appVersion'),
+  /** Tells the main process whether the load order has unsaved changes, so closing the window can ask first. */
+  setUnsaved: (dirty: boolean): Promise<void> => invoke('setUnsaved', dirty),
+  /** Puts an uncaught interface error in RimDeck's error log. */
+  reportError: (e: { kind: string; message: string; stack?: string }): Promise<void> => invoke('reportError', e),
+  crashStatus: (): Promise<CrashStatus> => invoke('crashStatus'),
+  /** Marks logged errors up to this time (all when left out) as seen. */
+  crashAck: (until?: string): Promise<void> => invoke('crashAck', until ?? null),
+  /** The bug report, built in the main process with personal paths removed. Nothing is sent. */
+  bugReport: (description: string, includeMods: boolean): Promise<BugReport> => invoke('bugReport', description, includeMods),
+  /** Asks where to save the report and writes it there; null when cancelled. App window only. */
+  saveReport: (text: string): Promise<string | null> => invoke('saveReport', text),
+  openLogFolder: (): Promise<string> => invoke('openLogFolder'),
 }
 
 export function imgUrl(path: string, width = 0) {

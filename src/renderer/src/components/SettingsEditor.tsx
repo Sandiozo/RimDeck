@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import {
   ChevronDown,
@@ -21,12 +21,28 @@ import type { SettingElem, SettingSchema, SettingsFile, SettingsNode, SettingsSc
 import { useStore } from '../store'
 import { api } from '../api'
 import { bytes, timeAgo } from '../lib'
-import { Toggle } from './ui'
+import { Toggle, useEscape } from './ui'
 
 // Settings files are listed once and refreshed after any write.
-export const useSettingsFiles = create<{ files: SettingsFile[] | null; load: () => Promise<void> }>((set) => ({
+let pending: Promise<void> | null = null
+export const useSettingsFiles = create<{ files: SettingsFile[] | null; error: string; load: () => Promise<void> }>((set, get) => ({
   files: null,
-  load: async () => set({ files: await api.modSettings() }),
+  error: '',
+  load: () => {
+    // Everything that mounts before the first list arrives shares one request, so a failure shows once.
+    if (pending && !get().files) return pending
+    // A new request is starting: drop the last failure so a retry shows "Loading…", not the old error. Loaded files stay.
+    if (get().error) set({ error: '' })
+    const run = api.modSettings().then(
+      (files) => set({ files, error: '' }),
+      (e: any) => {
+        set({ error: e?.message ?? String(e) })
+        useStore.getState().toast('error', `Could not read mod settings: ${e?.message ?? e}`)
+      },
+    )
+    const p: Promise<void> = run.finally(() => pending === p && (pending = null))
+    return (pending = p)
+  },
 }))
 
 /** Settings files saved for a mod folder (workshop id or local folder name). */
@@ -39,7 +55,7 @@ export function openSettings(path: string) {
 }
 
 export function ModSettingsSection({ folder }: { folder: string }) {
-  const { files, load } = useSettingsFiles()
+  const { files, error, load } = useSettingsFiles()
   const s = useStore()
   useEffect(() => {
     if (!files) void load()
@@ -83,7 +99,7 @@ export function ModSettingsSection({ folder }: { folder: string }) {
         ))
       ) : (
         <p className="dim" style={{ margin: 0, fontSize: 12 }}>
-          {files ? 'This mod has no settings RimDeck can edit.' : 'Loading…'}
+          {files ? 'This mod has no settings RimDeck can edit.' : error ? 'Could not read the mod settings files.' : 'Loading…'}
         </p>
       )}
     </div>
@@ -334,6 +350,24 @@ function rgbaToHex(v: string): string | null {
   return '#' + [m[1], m[2], m[3]].map((x) => Math.round(Math.min(1, Math.max(0, +x)) * 255).toString(16).padStart(2, '0')).join('')
 }
 
+// Whether the game can read a typed value: the same checks that mark a field red.
+function validValue(r: Row, v: string): boolean {
+  const t = r.schema?.type
+  if (t === 'int') return isInt(v)
+  if (t === 'float') return isNum(v)
+  if (t === 'bool') return isBool(v)
+  if (t === 'color') return RGBA.test(v)
+  if (t === 'intRange' || t === 'floatRange') {
+    const parts = v.split('~')
+    return parts.length === 2 && parts.every(t === 'intRange' ? isInt : isNum)
+  }
+  if (r.schema) return true
+  const old = r.node.text ?? ''
+  if (isBool(old)) return isBool(v)
+  if (rgbaToHex(old)) return RGBA.test(v)
+  return !isNum(old) || isNum(v)
+}
+
 function hexToRgba(hex: string, old: string): string {
   const a = RGBA.exec(old)?.[4] ?? '1.000'
   const c = [1, 3, 5].map((i) => (parseInt(hex.slice(i, i + 2), 16) / 255).toFixed(3))
@@ -373,7 +407,7 @@ export function SettingsEditor() {
       },
       (e) => !stale && setError(e.message),
     )
-    api.gameRunning().then((r) => !stale && setRunning(r))
+    api.gameRunning().then((r) => !stale && setRunning(r), () => {})
     return () => {
       stale = true
     }
@@ -381,6 +415,10 @@ export function SettingsEditor() {
 
   const rows = useMemo(() => (doc ? flatten(doc, schema) : []), [doc, schema])
   const values = useMemo(() => rows.filter((r) => !r.group).length, [rows])
+  // Settings whose default only the game knows: any value set here, even an empty one, is a change.
+  const unknownDefault = useMemo(() => new Set(rows.filter((r) => r.virtual && r.schema?.defUnknown).map((r) => r.node.id)), [rows])
+  const overlay = useRef<HTMLDivElement>(null)
+  useEscape(overlay, () => close(), !!path)
   const visible = useMemo(() => {
     const t = q.trim().toLowerCase()
     if (t) {
@@ -407,6 +445,8 @@ export function SettingsEditor() {
     ? s.app?.mods.find((m) => m.folder === folder)
     : s.app?.mods.find((m) => (m.source === 'local' || m.source === 'workshop') && file.toLowerCase().startsWith(`mod_${m.folder.toLowerCase()}_`))
   const changed = Object.keys(edits).length + structural
+  // Typed values the game could not read (the fields marked in red) block saving.
+  const bad = rows.filter((r) => !r.group && r.node.id in edits && !validValue(r, edits[r.node.id])).length
   const groups = rows.filter((r) => r.group)
   const close = () => {
     if (changed && !confirm('Discard your unsaved changes?')) return
@@ -429,7 +469,7 @@ export function SettingsEditor() {
   }
 
   const save = async () => {
-    if (!doc) return
+    if (!doc || bad) return
     try {
       const next = apply()
       const { backup } = await api.writeModSettings(path, next)
@@ -440,14 +480,19 @@ export function SettingsEditor() {
       void reloadFiles()
     } catch (e: any) {
       s.toast('error', e.message)
-      api.gameRunning().then(setRunning)
+      api.gameRunning().then(setRunning, () => {})
     }
   }
 
   const setVal = (n: SettingsNode, v: string) => {
     const next = { ...edits }
-    if (v === n.text) delete next[n.id]
+    if (v === n.text && !unknownDefault.has(n.id)) delete next[n.id]
     else next[n.id] = v
+    setEdits(next)
+  }
+  const revert = (n: SettingsNode) => {
+    const next = { ...edits }
+    delete next[n.id]
     setEdits(next)
   }
 
@@ -653,7 +698,7 @@ export function SettingsEditor() {
   }
 
   return (
-    <div className="overlay" onMouseDown={close}>
+    <div ref={overlay} className="overlay" onMouseDown={close}>
       <div className="modal" style={{ width: 'min(920px, 94vw)', maxHeight: '86vh' }} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <SlidersHorizontal size={20} color="var(--accent-text)" style={{ marginTop: 2 }} />
@@ -669,7 +714,7 @@ export function SettingsEditor() {
           <div className="banner" style={{ margin: '0 16px 10px' }}>
             <TriangleAlert size={15} color="var(--warn)" />
             <span className="grow">RimWorld is running. It rewrites settings when it exits, so close the game before saving.</span>
-            <button className="btn sm" onClick={() => api.gameRunning().then(setRunning)}>
+            <button className="btn sm" onClick={() => api.gameRunning().then(setRunning, () => {})}>
               Check again
             </button>
           </div>
@@ -749,7 +794,7 @@ export function SettingsEditor() {
                   </button>
                 )}
                 {n.id in edits && (
-                  <button className="btn sm ghost icon" title={`Undo (was ${n.text || 'empty'})`} onClick={() => setVal(n, n.text!)}>
+                  <button className="btn sm ghost icon" title={r.virtual && sc?.defUnknown ? 'Undo (back to the game default)' : `Undo (was ${n.text || 'empty'})`} onClick={() => revert(n)}>
                     <Undo2 size={11} />
                   </button>
                 )}
@@ -762,7 +807,9 @@ export function SettingsEditor() {
         </div>
         <div className="modal-foot">
           <span className="grow dim" style={{ alignSelf: 'center', fontSize: 12 }}>
-            {changed
+            {bad
+              ? `${bad} ${bad === 1 ? 'value is' : 'values are'} not valid. Fix the fields marked in red to save.`
+              : changed
               ? `${changed} unsaved change${changed === 1 ? '' : 's'}`
               : schema
                 ? 'Labels, defaults and limits come from the mod’s code. Hover a setting for its file name.'
@@ -771,7 +818,7 @@ export function SettingsEditor() {
           <button className="btn" onClick={close}>
             Close
           </button>
-          <button className="btn primary" disabled={!changed} onClick={save}>
+          <button className="btn primary" disabled={!changed || bad > 0} onClick={save}>
             <Save size={13} /> Save
           </button>
         </div>

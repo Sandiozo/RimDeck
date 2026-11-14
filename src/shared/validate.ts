@@ -1,5 +1,5 @@
 import type { Issue, ModInfo, Replacement, RuleMap, XmlReport } from './types.ts'
-import { baseId, buildEdges, resolver, ruleFor } from './graph.ts'
+import { baseId, buildEdges, depProviders, resolver, ruleFor } from './graph.ts'
 import { workshopUrl } from './workshop.ts'
 
 export interface ValidateInput {
@@ -15,6 +15,10 @@ export interface ValidateInput {
   xml?: XmlReport | null
 }
 
+/** Not marked for this game version. A mod that lists no versions at all counts as fine (no warning, not "outdated"). */
+export function isOutdated(m: ModInfo, gameMajor: string): boolean {
+  return m.source !== 'core' && m.source !== 'dlc' && m.supportedVersions.length > 0 && !m.supportedVersions.includes(gameMajor)
+}
 
 export function validate(input: ValidateInput): Issue[] {
   const { order, active, installed, gameMajor } = input
@@ -23,6 +27,10 @@ export function validate(input: ValidateInput): Issue[] {
   const resolveActive = resolver(order)
   const resolveInstalled = resolver(installed.keys())
   const nameOf = (id: string) => active.get(id)?.name ?? installed.get(id)?.[0]?.name ?? id
+  // The sorter's rules, built with its dependency setting. Without "Dependencies load first" a dependency
+  // pair is only sorted when another rule covers it.
+  const edges = buildEdges(order, active, input.community, input.user, input.depsAsLoadAfter, input.xml?.inferred)
+  const sorted = new Set(edges.map((e) => e.before + '>' + e.after))
 
   // Anything that names a packageId anywhere lets us find its Workshop page even if it isn't installed.
   const knownWorkshop = new Map<string, { name?: string; workshopId?: string }>()
@@ -67,17 +75,22 @@ export function validate(input: ValidateInput): Issue[] {
 
     for (const dep of m.dependencies) {
       const candidates = [dep.packageId, ...(dep.alternatives ?? [])]
-      const activeDep = candidates.map(resolveActive).find(Boolean)
-      if (activeDep) {
-        if (pos.get(activeDep)! > pos.get(id)!)
-          issues.push({
-            id: `deporder:${id}:${activeDep}`,
-            packageId: id,
-            severity: 'warning',
-            kind: 'dep-order',
-            title: `Loads before its dependency ${nameOf(activeDep)}`,
-            fixes: [{ label: 'Auto-sort', fix: { type: 'sort' } }],
-          })
+      // Same providers the sorter orders against (see buildEdges).
+      const providers = depProviders(dep, resolveActive)
+      if (providers.length) {
+        for (const activeDep of providers)
+          if (pos.get(activeDep)! > pos.get(id)!) {
+            const sorts = sorted.has(activeDep + '>' + id)
+            issues.push({
+              id: `deporder:${id}:${activeDep}`,
+              packageId: id,
+              severity: 'warning',
+              kind: 'dep-order',
+              title: `Loads before its dependency ${nameOf(activeDep)}`,
+              detail: sorts ? undefined : `Auto-sort won't move it while “Dependencies load first” is off in Settings. Move it below ${nameOf(activeDep)} by hand.`,
+              fixes: sorts ? [{ label: 'Auto-sort', fix: { type: 'sort' } }] : [],
+            })
+          }
         continue
       }
       const inst = candidates.map(resolveInstalled).find(Boolean)
@@ -119,7 +132,7 @@ export function validate(input: ValidateInput): Issue[] {
       })
     }
 
-    if (m.source !== 'core' && m.source !== 'dlc' && m.supportedVersions.length && !m.supportedVersions.includes(gameMajor)) {
+    if (isOutdated(m, gameMajor)) {
       const rep = replacementByPid.get(baseId(id)) ?? (m.workshopId ? replacementByWs.get(m.workshopId) : undefined)
       const supported = [...m.supportedVersions].sort().reverse().slice(0, 3).join(', ')
       issues.push({
@@ -159,10 +172,10 @@ export function validate(input: ValidateInput): Issue[] {
       })
   }
 
-  // Declared load-order rules (About.xml, community, yours) that the current order breaks.
-  const edges = buildEdges(order, active, input.community, input.user, false, input.xml?.inferred)
+  // Declared load-order rules (About.xml, community, yours) that the current order breaks, from the same
+  // edges as above so the same inferred rules are kept; dependencies are reported above.
   for (const e of edges) {
-    if (pos.get(e.before)! < pos.get(e.after)!) continue
+    if (e.source === 'dependency' || pos.get(e.before)! < pos.get(e.after)!) continue
     const self = e.owner
     const other = self === e.after ? e.before : e.after
     issues.push({

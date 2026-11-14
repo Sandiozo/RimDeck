@@ -1,4 +1,5 @@
 import type { Issue, ModInfo, ModMeta } from '@shared/types'
+import { isOutdated } from '@shared/validate'
 import { isMac } from './api'
 
 export interface FilterCtx {
@@ -11,6 +12,8 @@ export interface FilterCtx {
 
 const DAY = 86400000
 export const NEW_DAYS = 3
+
+export { isOutdated }
 
 /**
  * Search syntax: free text matches name/author/packageId/tags/notes.
@@ -33,8 +36,8 @@ export function matchMod(m: ModInfo | undefined, pid: string, query: string, ctx
           v === 'error' ? issues.some((i) => i.severity === 'error')
           : v === 'warning' ? issues.some((i) => i.severity === 'warning')
           : v === 'issue' ? issues.length > 0
-          : v === 'outdated' ? !!m && m.source !== 'dlc' && m.source !== 'core' && !m.supportedVersions.includes(ctx.gameMajor)
-          : v === 'current' ? !!m && (m.source === 'dlc' || m.source === 'core' || m.supportedVersions.includes(ctx.gameMajor))
+          : v === 'outdated' ? !!m && isOutdated(m, ctx.gameMajor)
+          : v === 'current' ? !!m && !isOutdated(m, ctx.gameMajor)
           : v === 'changed' ? !!ctx.changed?.has(pid)
           : v === 'new' || v === 'updated' ? !!m && Date.now() - m.mtime < NEW_DAYS * DAY
           : v === 'missing' ? !m

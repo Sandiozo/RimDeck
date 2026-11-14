@@ -546,3 +546,25 @@ export function decodeDds(buf: Uint8Array): DecodedImage | null {
     return null
   }
 }
+
+/**
+ * A DDS file as BGRA rows, ready for Electron's nativeImage.createFromBitmap. With `flip` the rows
+ * are turned over: mod textures follow Unity's bottom-up row order.
+ */
+export function ddsToBgra(buf: Uint8Array, flip: boolean): { width: number; height: number; bgra: Uint8Array } | null {
+  const decoded = decodeDds(buf)
+  if (!decoded) return null
+  const { width, height, rgba } = decoded
+  const bgra = new Uint8Array(width * height * 4)
+  for (let y = 0; y < height; y++) {
+    const src = (flip ? height - 1 - y : y) * width * 4
+    const dst = y * width * 4
+    for (let x = 0; x < width * 4; x += 4) {
+      bgra[dst + x] = rgba[src + x + 2]
+      bgra[dst + x + 1] = rgba[src + x + 1]
+      bgra[dst + x + 2] = rgba[src + x]
+      bgra[dst + x + 3] = rgba[src + x + 3]
+    }
+  }
+  return { width, height, bgra }
+}

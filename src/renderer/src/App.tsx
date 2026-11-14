@@ -51,6 +51,7 @@ import { ItemsView } from './views/Items'
 import { ChangesBanner } from './components/Changes'
 import { SettingsEditor } from './components/SettingsEditor'
 import { ProfileSwitcher } from './components/ProfileSwitcher'
+import { BugReport, openBugReport, ProblemNotice } from './components/BugReport'
 
 const NAV: [View, string, typeof LayoutGrid][] = [
   ['mods', 'Mods', LayoutGrid],
@@ -77,8 +78,11 @@ export function App() {
     return onEvent((e) => {
       const st = useStore.getState()
       if (e.type === 'mods-changed') {
-        st.reload()
-        st.toast('info', 'Mod folders changed. The list has been refreshed.')
+        // The main process has already rescanned; just fetch the result.
+        st.refreshState().then(
+          () => st.toast('info', 'Mod folders changed. The list has been refreshed.'),
+          (err) => st.toast('error', `Could not refresh the mod list: ${err.message}`),
+        )
       } else if (e.type === 'config-changed' && e.external) useStore.setState({ externalChange: true })
       else if (e.type === 'game-exited') st.toast('info', 'RimWorld closed')
       else if (e.type === 'downloads') st.setDownloads(e.state)
@@ -107,26 +111,26 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState()
       const mod = e.ctrlKey || e.metaKey
-      const typing = (e.target as HTMLElement).closest('input, textarea, select')
-      if (mod && e.key.toLowerCase() === 'k') {
+      const key = (e.key ?? '').toLowerCase() // autofill can send key events without a key
+      const typing = e.target instanceof Element && !!e.target.closest('input, textarea, select')
+      // Open dialogs (sort preview, mod settings editor, palette, change list…) sit on an .overlay. While one is
+      // open, the load-order shortcuts do nothing: Ctrl+S there reads as "save this dialog", not the load order.
+      const dialog = !!(st.sortPreview || st.settingsEditor || document.querySelector('.overlay'))
+      if (mod && key === 'k') {
+        if (dialog && !st.palette) return
         e.preventDefault()
         st.setPalette(!st.palette)
-      } else if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        st.previewSort()
-      } else if (mod && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        st.save()
-      } else if (mod && e.key.toLowerCase() === 'z' && !typing) {
-        e.preventDefault()
-        e.shiftKey ? st.redo() : st.undo()
-      } else if (mod && e.key.toLowerCase() === 'y' && !typing) {
-        e.preventDefault()
-        st.redo()
-      } else if (e.key === 'F5') {
-        e.preventDefault()
-        st.launch()
       } else if (e.key === 'Escape' && st.sortPreview) st.closeSort()
+      else if ((mod && key === 's') || e.key === 'F5') {
+        e.preventDefault() // never the browser's own save page / reload
+        if (dialog) return
+        if (e.key === 'F5') st.launch()
+        else if (e.shiftKey) st.previewSort()
+        else st.save()
+      } else if (mod && (key === 'z' || key === 'y') && !typing && !dialog) {
+        e.preventDefault()
+        key === 'y' || e.shiftKey ? st.redo() : st.undo()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -140,13 +144,26 @@ export function App() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [])
 
+  // In the app window, the main process asks before closing while this is true.
+  useEffect(() => {
+    if (isElectron) api.setUnsaved(dirty).catch(() => {})
+  }, [dirty])
+
   if (!app)
     return (
       <div className="splash">
         <div style={{ textAlign: 'center' }}>
           <img className="brand-logo big" src={iconLarge} alt="" draggable={false} />
           {s.loading}
+          {s.loading?.startsWith('Could not start') && (
+            <div style={{ marginTop: 14 }}>
+              <button className="btn" onClick={openBugReport}>
+                Report a bug
+              </button>
+            </div>
+          )}
         </div>
+        <BugReport />
       </div>
     )
 
@@ -163,13 +180,13 @@ export function App() {
           RimDeck {appVersion && <small>v{appVersion}</small>}
         </div>
         <ProfileSwitcher />
-        <button className="btn ghost icon" title={`Undo (${kb('Ctrl Z')})`} disabled={!s.past.length} onClick={s.undo}>
+        <button className="btn ghost icon" title={`Undo (${kb('Ctrl Z')})`} aria-label="Undo" disabled={!s.past.length} onClick={s.undo}>
           <Undo2 size={15} />
         </button>
-        <button className="btn ghost icon" title={`Redo (${kb('Ctrl Y')})`} disabled={!s.future.length} onClick={s.redo}>
+        <button className="btn ghost icon" title={`Redo (${kb('Ctrl Y')})`} aria-label="Redo" disabled={!s.future.length} onClick={s.redo}>
           <Redo2 size={15} />
         </button>
-        <div className="searchbox no-drag" {...clickable(() => s.setPalette(true))}>
+        <div className="searchbox no-drag" title={`Search mods and commands (${kb('Ctrl K')})`} aria-label="Search mods and commands" {...clickable(() => s.setPalette(true))}>
           <Search size={14} />
           <span className="grow">Search mods and commands</span>
           <span className="kbd">{kb('Ctrl K')}</span>
@@ -181,29 +198,38 @@ export function App() {
           <Save size={14} /> Save{dirty && <span className="pip" />}
         </button>
         <ContinueButton />
-        <button className="btn play" title="Save and launch RimWorld (F5)" onClick={s.launch}>
+        <button className="btn play" title="Save and launch RimWorld (F5)" disabled={s.launching} onClick={() => s.launch()}>
           <Play size={14} fill="currentColor" /> Play
         </button>
       </header>
 
       <nav className="rail">
         {NAV.map(([v, label, Icon]) => (
-          <button key={v} className={'rail-btn' + (s.view === v ? ' active' : '')} title={label} onClick={() => s.setView(v)}>
+          <button key={v} className={'rail-btn' + (s.view === v ? ' active' : '')} title={label} aria-label={label} onClick={() => s.setView(v)}>
             <Icon size={18} />
             {v === 'problems' && (errors || warnings) > 0 && <span className={'rail-badge' + (errors ? '' : ' warn')}>{errors || warnings}</span>}
             {v === 'downloads' && (pending || localUpdates) > 0 && <span className={'rail-badge' + (pending ? ' accent' : ' info')}>{pending || localUpdates}</span>}
           </button>
         ))}
         <span className="rail-spacer" />
-        <button className="rail-btn" title="Rescan mod folders" onClick={() => s.reload().then(() => s.toast('ok', 'Mod folders rescanned'))}>
+        <button
+          className="rail-btn"
+          title="Rescan mod folders"
+          aria-label="Rescan mod folders"
+          onClick={() => s.reload().then(() => s.toast('ok', 'Mod folders rescanned'), (e) => s.toast('error', `Rescan failed: ${e.message}`))}
+        >
           <RefreshCw size={17} />
         </button>
-        <button className={'rail-btn' + (s.view === 'settings' ? ' active' : '')} title="Settings" onClick={() => s.setView('settings')}>
+        <button className={'rail-btn' + (s.view === 'settings' ? ' active' : '')} title="Settings" aria-label="Settings" onClick={() => s.setView('settings')}>
           <Settings size={18} />
+        </button>
+        <button className="rail-btn" title="Report a bug" aria-label="Report a bug" onClick={openBugReport}>
+          <Bug size={18} />
         </button>
       </nav>
 
       <main className="main">
+        <ProblemNotice />
         {app.pathProblems.length > 0 && (
           <div className="banner err">
             <CircleAlert size={15} color="var(--err)" />
@@ -293,6 +319,7 @@ export function App() {
       <SortPreview />
       <ContextMenu />
       <SettingsEditor />
+      <BugReport />
       <Toasts />
     </div>
   )
@@ -302,12 +329,24 @@ function BisectBanner() {
   const s = useStore()
   const b = s.bisect!
   if (b.culprit) {
-    const m = s.installed.get(b.culprit)?.[0]
+    const name = (id: string) => s.installed.get(id)?.[0]?.name ?? id
+    // More than one left: they need each other, so they could not be turned off one at a time.
+    const group = b.suspects.length > 1 ? b.suspects : null
     return (
       <div className="banner accent">
         <Bug size={15} color="var(--accent-text)" />
         <span className="grow">
-          Search complete: <b>{m?.name ?? b.culprit}</b> is the most likely cause. Your original list has been restored and saved.
+          {group ? (
+            <>
+              Search complete: the cause is one of <b>{group.slice(0, 5).map(name).join(', ')}</b>
+              {group.length > 5 ? ` and ${group.length - 5} more` : ''}. They need each other, so they can't be tested apart.
+            </>
+          ) : (
+            <>
+              Search complete: <b>{name(b.culprit)}</b> is the most likely cause.
+            </>
+          )}{' '}
+          Your original list has been restored and saved.
         </span>
         <button className="btn sm" onClick={() => { s.showMod(b.culprit!); s.stopBisect(false) }}>
           Show mod
@@ -325,7 +364,7 @@ function BisectBanner() {
       <span className="grow">
         <b>Step {b.step}</b> · testing {b.testing.length} of {b.suspects.length} suspects (about {remaining} more steps). Launch the game, then report whether the problem still occurs.
       </span>
-      <button className="btn sm play" onClick={() => s.launch()}>
+      <button className="btn sm play" disabled={s.launching} onClick={() => s.launch()}>
         <Play size={12} fill="currentColor" /> Launch
       </button>
       <button className="btn sm" onClick={() => s.bisectAnswer(true)}>
@@ -344,6 +383,7 @@ function BisectBanner() {
 // Starts the game straight into the newest save. The tooltip names it so it's clear which one.
 function ContinueButton() {
   const continueGame = useStore((st) => st.continueGame)
+  const launching = useStore((st) => st.launching)
   const install = useStore((st) => st.app?.settings.currentInstall)
   const [latest, setLatest] = useState<{ name: string; file: string; mtime: number } | null>(null)
   useEffect(() => {
@@ -359,7 +399,7 @@ function ContinueButton() {
   return (
     <button
       className="btn continue"
-      disabled={!latest}
+      disabled={!latest || launching}
       title={latest ? `Continue “${latest.name}” (saved ${timeAgo(latest.mtime)}). Saves the load order, starts RimWorld and opens this save once loading is done.` : 'No saves yet'}
       onClick={() => continueGame(latest?.file)}
     >

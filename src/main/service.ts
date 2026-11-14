@@ -35,26 +35,26 @@ import type {
   WorkshopUpdate,
 } from '../shared/types.ts'
 import { effectiveDirs, OFFICIAL_ORDER } from '../shared/graph.ts'
-import { readAssembly, type AssemblyInfo, type Md } from './core/harmony.ts'
-import { findPlayerLog, parsePlayerLog, type Attribution } from './core/logs.ts'
-import { listBackups, readModListFile, readModsConfig, serializeModsConfig, writeModsConfig } from './core/modsconfig.ts'
+import type { AssemblyInfo, Md } from './core/harmony.ts'
+import { findPlayerLog, type Attribution } from './core/logs.ts'
+import { backupModList, listBackups, readModListFile, readModsConfig, serializeModsConfig, writeModsConfig } from './core/modsconfig.ts'
 import { defaultConfigDir, detectPaths, gameRoot, majorOf, readGameVersion, validatePaths } from './core/paths.ts'
-import { importFromRimSort } from './core/rimsort.ts'
+import { importFromRimSort, lowerRuleKeys } from './core/rimsort.ts'
 import { loadRules } from './core/rulesdb.ts'
 import { backupNewestSave, listSaves, readSaveMeta } from './core/saves.ts'
-import { scanAll } from './core/scanner.ts'
-import { textureLookup, textureReport } from './core/textures.ts'
-import { extractDefData } from './core/defdata.ts'
 import { isGameRunning, matchSettingsFiles, moveToBackup, readSettings, resetSettings, writeSettings } from './core/modsettings.ts'
 import { cachedAssemblySettings, enumMembersIn, openForEnums, readAssemblySettings, type AssemblySettings } from './core/settingschema.ts'
-import { isSlowXpath, mediaStats, score, startupFromLog } from './core/loadtime.ts'
+import { isSlowXpath, score } from './core/loadtime.ts'
 import { ensurePicksMod, listPicks, pickTexture, PICKS_ID, unpickTexture } from './core/texturepicks.ts'
 import { clearContinueRequest, CONTINUE_DLL, ensureContinueMod, latestSave, writeContinueRequest } from './core/continue.ts'
 import { steamWorkshop, type SteamJobResult } from './core/steamclient.ts'
-import { buildXmlReport, indexModXml, searchXml, type ModXml } from './core/xmlindex.ts'
+import { buildXmlReport, searchXml, type ModXml } from './core/xmlindex.ts'
 import { DownloadQueue, SteamCmd } from './core/steamcmd.ts'
 import { exists, readJson, writeJson } from './core/store.ts'
 import { fetchCollections, fetchDetails, newestMtime, readWorkshopAcf } from './core/workshop.ts'
+import { InProcess } from './workers/pool.ts'
+import type { Offload } from './workers/protocol.ts'
+import { tasks, type Tasks } from './workers/tasks.ts'
 
 interface PlaySnapshot {
   time: number
@@ -93,11 +93,15 @@ function inside(parent: string, child: string) {
   return !!r && !r.startsWith('..') && !isAbsolute(r)
 }
 
+// Heavy read-only calls the interface may make several times at once (start-up, several panels open).
+// See Service.call.
+const SHARED = new Set(['getRules', 'checkUpdates', 'xmlReport', 'modSettings', 'textures', 'defData', 'loadReport', 'listSaves', 'listInstalls', 'changes'])
+
 export class Service {
   dataDir: string
   emit: (e: AppEvent) => void
-  settings: Settings = DEFAULT_SETTINGS
-  user: UserData = DEFAULT_USER
+  settings: Settings = structuredClone(DEFAULT_SETTINGS)
+  user: UserData = structuredClone(DEFAULT_USER)
   mods: ModInfo[] = []
   config: ModsConfig | null = null
   gameVersion = ''
@@ -117,10 +121,17 @@ export class Service {
   downloadRecords: DownloadRecords = {}
   details = new Map<string, { at: number; d: WorkshopDetails }>()
   updateReport: UpdateReport | null = null
+  // Bumped whenever what the shared calls read changes (a rescan, a save, new settings).
+  gen = 0
+  inflight = new Map<string, Promise<unknown>>()
+  laterRescan: NodeJS.Timeout | null = null
+  // Where the heavy parsing runs: worker threads in the app (see index.ts), this thread otherwise.
+  offload: Offload<Tasks>
 
-  constructor(dataDir: string, emit: (e: AppEvent) => void) {
+  constructor(dataDir: string, emit: (e: AppEvent) => void, opts: { offload?: Offload<Tasks> } = {}) {
     this.dataDir = dataDir
     this.emit = emit
+    this.offload = opts.offload ?? new InProcess(tasks)
     this.steamcmd = new SteamCmd(join(dataDir, 'steamcmd'))
     this.downloads = new DownloadQueue(this.steamcmd, {
       emit: (state) => this.emit({ type: 'downloads', state }),
@@ -132,9 +143,28 @@ export class Service {
       },
       finished: async () => {
         await this.rescan()
-        if (this.updateReport) this.updateReport = await this.buildUpdateReport(false)
+        const epoch = this.installEpoch
+        if (!this.updateReport) return
+        const report = await this.buildUpdateReport(false)
+        if (epoch === this.installEpoch) this.updateReport = report
       },
     })
+  }
+
+  /**
+   * Runs an API method for the interface. An identical shared call made while one is running waits for
+   * that one instead of repeating the work; calls made after a change (see `gen`) always start afresh.
+   */
+  call(method: string, args: unknown[]): Promise<unknown> {
+    const run = () => (this as any)[method](...args) as Promise<unknown>
+    if (!SHARED.has(method)) return run()
+    const key = `${method}|${this.gen}|${JSON.stringify(args)}`
+    let p = this.inflight.get(key)
+    if (!p) {
+      p = run().finally(() => this.inflight.delete(key))
+      this.inflight.set(key, p)
+    }
+    return p
   }
 
   file(name: string) {
@@ -174,7 +204,7 @@ export class Service {
     this.settings.paths = { ...target.paths }
     this.settings.launchArgs = target.launchArgs
     await this.saveSettings()
-    this.defCache = null
+    this.clearInstallCaches()
     await this.rescan(false)
     this.startWatching()
     return this.state()
@@ -222,13 +252,27 @@ export class Service {
     return this.listInstalls()
   }
 
+  // Reports built from one install's mods (or one set of folders) must not be shown for another.
+  // A report still being built when this runs is not kept either (see installEpoch).
+  installEpoch = 0
+  clearInstallCaches() {
+    this.installEpoch++
+    this.updateReport = null
+    this.defCache = null
+  }
+
   async init() {
+    // A settings or user file that exists but can't be read stops start-up (shown as "Could not start")
+    // rather than starting empty and saving over it; ready() in index.ts tries again on the next call.
     this.settings = await readJson(this.file('settings.json'), DEFAULT_SETTINGS)
     this.settings.paths = { ...DEFAULT_SETTINGS.paths, ...this.settings.paths }
     // The first releases defaulted to a purple accent; move those installs to the current default.
     if (OLD_ACCENTS.includes(this.settings.accent)) this.settings.accent = DEFAULT_SETTINGS.accent
     this.user = await readJson(this.file('user.json'), DEFAULT_USER)
-    this.downloadRecords = await readJson<DownloadRecords>(this.file('downloads.json'), {})
+    // Rules imported from RimSort by older versions kept the case of the ids they point to, so they never matched.
+    this.user.userRules = lowerRuleKeys(this.user.userRules)
+    // Only a hint for update checks: without it they fall back to file dates.
+    this.downloadRecords = await readJson<DownloadRecords>(this.file('downloads.json'), {}).catch(() => ({}))
     if (!this.settings.paths.gameDir) {
       const { paths } = await detectPaths()
       this.settings.paths = paths
@@ -241,6 +285,7 @@ export class Service {
     }
     await this.rescan(false)
     await this.migrateProfiles()
+    await this.syncProfile()
     if (!this.settings.firstRunDone) {
       await this.importRimSort()
       this.settings.firstRunDone = true
@@ -249,11 +294,16 @@ export class Service {
     this.startWatching()
   }
 
-  async saveSettings() {
-    await writeJson(this.file('settings.json'), this.settings)
+  // settings.json and user.json are each written one write at a time, so rapid edits (e.g. coloring many
+  // mods) never interleave; each write saves the latest state.
+  settingsSaving: Promise<void> = Promise.resolve()
+  saveSettings() {
+    this.gen++
+    const write = this.settingsSaving.then(() => writeJson(this.file('settings.json'), this.settings))
+    this.settingsSaving = write.catch(() => {})
+    return write
   }
 
-  // Serialized so rapid edits (e.g. coloring many mods) never interleave writes.
   saving: Promise<void> = Promise.resolve()
   saveUser() {
     const write = this.saving.then(() => writeJson(this.file('user.json'), this.user))
@@ -261,14 +311,35 @@ export class Service {
     return write
   }
 
-  async rescan(emit = true) {
+  // One scan at a time, so the mods and the config always come from the same scan. A request made while
+  // one runs queues one more scan, which later requests share.
+  scanRunning: Promise<void> = Promise.resolve()
+  scanQueued: { emit: boolean; done: Promise<void> } | null = null
+  rescan(emit = true): Promise<void> {
+    if (this.scanQueued) {
+      this.scanQueued.emit ||= emit
+      return this.scanQueued.done
+    }
+    const next = { emit, done: Promise.resolve() }
+    next.done = this.scanRunning.then(() => {
+      this.scanQueued = null
+      return this.scan(next.emit)
+    })
+    this.scanQueued = next
+    this.scanRunning = next.done.catch(() => {})
+    return next.done
+  }
+
+  async scan(emit: boolean) {
     const t = performance.now()
     const p = this.settings.paths
     const [version, problems, config] = await Promise.all([readGameVersion(p.gameDir), validatePaths(p), readModsConfig(p.configDir)])
+    const mods = await this.offload.run('scanAll', [p, majorOf(version)])
     this.gameVersion = version
     this.pathProblems = problems
     this.config = config
-    this.mods = await scanAll(p, majorOf(version))
+    this.mods = mods
+    this.gen++
     this.scanMs = Math.round(performance.now() - t)
     this.scannedFingerprint = await this.modsFingerprint()
     if (emit) this.emit({ type: 'mods-changed' })
@@ -280,13 +351,22 @@ export class Service {
   async modsFingerprint(): Promise<string> {
     const p = this.settings.paths
     const parts: string[] = []
-    for (const dir of [p.localModsDir, p.workshopDir]) {
-      if (!dir) continue
-      const names = await readdir(dir).catch(() => [] as string[])
-      parts.push(`${dir}:${names.sort().join('|')}`)
-    }
     const time = (f: string) => stat(f).then((st) => st.mtimeMs, () => 0)
     const mods = this.mods.filter((m) => m.source === 'local' || m.source === 'workshop')
+    const known = new Set(mods.map((m) => m.path))
+    // A folder that wasn't a mod at the last scan (still downloading or unzipping) counts once its About.xml appears.
+    const aboutTime = async (dir: string) => {
+      const about = (await readdir(dir).catch(() => [] as string[])).find((n) => n.toLowerCase() === 'about')
+      const file = about && (await readdir(join(dir, about)).catch(() => [] as string[])).find((n) => n.toLowerCase() === 'about.xml')
+      return about && file ? time(join(dir, about, file)) : 0
+    }
+    for (const dir of [p.localModsDir, p.workshopDir]) {
+      if (!dir) continue
+      const names = (await readdir(dir).catch(() => [] as string[])).sort()
+      parts.push(`${dir}:${names.join('|')}`)
+      const pending = names.map((n) => join(dir, n)).filter((f) => !known.has(f))
+      parts.push(...(await Promise.all(pending.map(async (f) => `${f}:${await aboutTime(f)}`))))
+    }
     const times = await Promise.all(mods.map(async (m) => `${m.path}:${await time(join(m.path, 'About', 'About.xml'))},${await time(join(m.path, 'LoadFolders.xml'))}`))
     return parts.concat(times).join('\n')
   }
@@ -324,10 +404,14 @@ export class Service {
     if (!dir) throw new Error('Config folder is not set')
     const known = new Set(this.config?.knownExpansions ?? [])
     for (const m of this.mods) if (m.source === 'dlc') known.add(m.packageId)
+    known.delete('ludeon.rimworld')
+    // The official order first; expansions RimDeck doesn't know yet (newer DLC) follow and are kept too.
+    const official: readonly string[] = OFFICIAL_ORDER
+    const knownExpansions = [...official.filter((id) => known.has(id)), ...[...known].filter((id) => !official.includes(id))]
     const write = writeModsConfig(dir, this.instFile('backups'), {
       version: this.config?.version || this.gameVersion,
       activeMods,
-      knownExpansions: OFFICIAL_ORDER.filter((id) => known.has(id) && id !== 'ludeon.rimworld'),
+      knownExpansions,
     }).then((r) => {
       this.lastWrite = r.mtime
       return r
@@ -335,6 +419,7 @@ export class Service {
     this.configWrite = write.catch(() => {})
     const { backup } = await write
     this.config = await readModsConfig(dir)
+    this.gen++
     const profile = this.currentProfile()
     if (profile && profile.installId === this.settings.currentInstall) {
       profile.mods = [...activeMods]
@@ -353,7 +438,8 @@ export class Service {
     if (this.user.profiles?.length) return
     const now = Date.now()
     const install = this.settings.currentInstall || 'default'
-    const profiles: Profile[] = [{ id: 'p-default', name: 'Default', installId: install, mods: this.config?.activeMods ?? [], createdAt: now, updatedAt: now }]
+    // If ModsConfig.xml can't be read now, this starts empty and syncProfile fills it once it can.
+    const profiles: Profile[] = [{ id: 'p-default', name: 'Default', installId: install, mods: [...(this.config?.activeMods ?? [])], createdAt: now, updatedAt: now }]
     ;(this.user.lists ?? []).forEach((l, i) =>
       profiles.push({ id: `p-${now.toString(36)}-${i}`, name: l.name, installId: install, mods: l.ids, createdAt: l.createdAt || now, updatedAt: l.createdAt || now }),
     )
@@ -366,6 +452,14 @@ export class Service {
     const p = this.user.profiles?.find((x) => x.id === id)
     if (!p) throw new Error('Unknown profile')
     if (!this.settings.installs.some((i) => i.id === p.installId)) throw new Error('This profile’s game install was removed. Select another install for it first.')
+    // ModsConfig.xml may have changed outside RimDeck since it was loaded; the profile being left keeps
+    // that newest list, so switching back later doesn't bring back an older one.
+    const onDisk = await readModsConfig(this.settings.paths.configDir)
+    if (onDisk) {
+      this.config = onDisk
+      this.gen++
+      await this.syncProfile()
+    }
     if (p.installId !== this.settings.currentInstall) await this.switchInstall(p.installId)
     this.user.currentProfile = id
     await this.saveUser()
@@ -373,8 +467,31 @@ export class Service {
     return this.state()
   }
 
+  // ModsConfig.xml is the live list of the current profile, and it can change outside RimDeck (the game,
+  // another tool). When the two differ the profile takes the file's list, which is the one on screen; its
+  // previous list is kept among the ModsConfig.xml backups in case the file was reset rather than edited.
+  async syncProfile() {
+    const p = this.currentProfile()
+    const mods = this.config?.activeMods
+    if (!p || !mods || p.installId !== this.settings.currentInstall) return
+    if (p.mods.length === mods.length && p.mods.every((id, i) => id === mods[i])) return
+    if (p.mods.length) {
+      try {
+        await backupModList(this.instFile('backups'), { version: this.config!.version || this.gameVersion, activeMods: p.mods, knownExpansions: this.config!.knownExpansions })
+      } catch (e) {
+        // Without that copy the profile keeps its list; ModsConfig.xml itself is backed up before any write.
+        console.warn(`[rimdeck] profile list not updated from ModsConfig.xml: ${(e as Error).message}`)
+        return
+      }
+    }
+    p.mods = [...mods]
+    p.updatedAt = Date.now()
+    await this.saveUser()
+  }
+
   async reloadConfig(): Promise<ModsConfig | null> {
     this.config = await readModsConfig(this.settings.paths.configDir)
+    this.gen++
     return this.config
   }
 
@@ -385,6 +502,7 @@ export class Service {
     this.syncCurrentInstall()
     await this.saveSettings()
     if (pathsChanged) {
+      this.clearInstallCaches()
       await this.rescan(false)
       this.startWatching()
     }
@@ -448,7 +566,7 @@ export class Service {
     const report: ModAssemblyReport = { packageId: m.packageId, dlls: [], patches: [], namespaces: [], usesHarmony: false }
     for (const dll of m.assemblies) {
       const cached = this.asmCache.get(dll)
-      const info = cached && cached.mtime === m.mtime ? cached.info : await readAssembly(dll)
+      const info = cached && cached.mtime === m.mtime ? cached.info : await this.offload.run('readAssembly', [dll])
       if (cached?.info !== info || cached?.mtime !== m.mtime) this.asmCache.set(dll, { mtime: m.mtime, info })
       if (!info) continue
       report.dlls.push({ file: basename(dll), name: info.name, version: info.version, references: info.references })
@@ -477,7 +595,8 @@ export class Service {
   }
 
   async textures(packageIds: string[]): Promise<TextureReport> {
-    return textureReport(this.resolveMods(packageIds))
+    // On the worker that runs defData, which has read the same texture folders already (see workers/tasks.ts).
+    return this.offload.run('textureReport', [this.resolveMods(packageIds)], { key: 'defs' })
   }
 
   xmlCache = new Map<string, { key: string; data: ModXml }>()
@@ -491,8 +610,12 @@ export class Service {
         const key = `${m.mtime}|${dirs.join('|')}`
         const c = this.xmlCache.get(m.path)
         if (c?.key === key) return c.data
-        const data = await indexModXml(m, dirs)
-        this.xmlCache.set(m.path, { key, data })
+        const data = await this.offload.run('indexModXml', [m, dirs])
+        // Like defData: a mod with files that could not be read is read again next time instead of keeping a partial index.
+        if (data.unreadable) {
+          console.warn(`[rimdeck] ${m.packageId}: ${data.unreadable} XML file(s) could not be read`)
+          this.xmlCache.delete(m.path)
+        } else this.xmlCache.set(m.path, { key, data })
         return data
       }),
     )
@@ -510,22 +633,24 @@ export class Service {
     const mods = this.resolveMods(packageIds).filter((m) => m.source !== 'core' && m.source !== 'dlc')
     const active = new Set(packageIds)
     const xml = await this.xmlIndexes(mods)
-    const costs = await Promise.all(
-      mods.map(async (m, i) => {
-        const media = await mediaStats(m, effectiveDirs(m, (p) => active.has(p)))
-        const x = xml[i]
-        const base = {
-          ...media,
-          defs: x.defs.length,
-          patches: x.patches.length,
-          slowPatches: x.patches.filter((p) => isSlowXpath(p.xpath)).length,
-          harmonyPatches: m.hasAssemblies ? (await this.analyzeMod(m)).patches.length : 0,
-        }
-        return { packageId: m.packageId, ...base, score: score(base) } as ModCost
-      }),
-    )
+    // File sizes for every mod in one job, with one key: the worker keeps them for the next report.
+    const [media, harmony] = await Promise.all([
+      this.offload.run('mediaStats', [mods.map((m) => ({ mod: m, dirs: effectiveDirs(m, (p) => active.has(p)) }))], { key: 'media' }),
+      Promise.all(mods.map(async (m) => (m.hasAssemblies ? (await this.analyzeMod(m)).patches.length : 0))),
+    ])
+    const costs = mods.map((m, i) => {
+      const x = xml[i]
+      const base = {
+        ...media[i],
+        defs: x.defs.length,
+        patches: x.patches.length,
+        slowPatches: x.patches.filter((p) => isSlowXpath(p.xpath)).length,
+        harmonyPatches: harmony[i],
+      }
+      return { packageId: m.packageId, ...base, score: score(base) } as ModCost
+    })
     const log = await findPlayerLog(this.settings.paths.configDir)
-    const startup = log ? await startupFromLog(log) : undefined
+    const startup = log ? await this.offload.run('startupFromLog', [log]) : undefined
     return { mods: costs.sort((a, b) => b.score - a.score), startup, ms: Math.round(performance.now() - t) }
   }
 
@@ -558,7 +683,13 @@ export class Service {
     const result = await steamWorkshop('unsubscribe', mods.map((m) => m.workshopId!), this.file('steam'))
     const done = new Set(result.done)
     // Steam removes the folders a few seconds after the helper exits; the folder watcher picks that up too.
-    if (done.size) setTimeout(() => this.rescan().catch(() => {}), 6000)
+    if (done.size) {
+      if (this.laterRescan) clearTimeout(this.laterRescan)
+      this.laterRescan = setTimeout(() => {
+        this.laterRescan = null
+        this.rescan().catch(() => {})
+      }, 6000)
+    }
     return { ...result, packageIds: mods.filter((m) => done.has(m.workshopId!)).map((m) => m.packageId) }
   }
 
@@ -595,10 +726,12 @@ export class Service {
     const mods = this.resolveMods(order)
     const key = mods.map((m) => `${m.packageId}:${m.mtime}`).join('|')
     if (this.defCache?.key === key) return this.defCache.data
+    const epoch = this.installEpoch
     const indexes = await this.xmlIndexes(mods)
-    const lookup = await textureLookup(mods)
-    const data = await extractDefData(mods, indexes.map((x) => x.files), lookup)
-    this.defCache = { key, data }
+    // Always the same worker, which keeps the files it parsed for the next order (see core/defdata.ts).
+    const data = await this.offload.run('defData', [mods, indexes.map((x) => x.files)], { key: 'defs' })
+    // Not kept when some XML could not be read, so the next call tries again.
+    if (epoch === this.installEpoch && !indexes.some((x) => x.unreadable)) this.defCache = { key, data }
     return data
   }
 
@@ -606,7 +739,7 @@ export class Service {
   async searchXml(query: string, packageIds: string[]): Promise<XmlSearchResult> {
     const game = this.mods.filter((m) => m.source === 'core' || m.source === 'dlc').map((m) => m.packageId)
     const mods = this.resolveMods([...new Set([...game, ...packageIds])])
-    return searchXml(query, mods, await this.xmlIndexes(mods))
+    return searchXml(query, mods, await this.xmlIndexes(mods), 500, (...args) => this.offload.run('searchFiles', args))
   }
 
   async readLog(): Promise<LogReport | null> {
@@ -615,17 +748,20 @@ export class Service {
     const active = new Set(this.config?.activeMods ?? [])
     const mods = this.mods.filter((m) => active.has(m.packageId))
     const a: Attribution = { namespaces: new Map(), packageIds: new Set(), names: new Map() }
-    for (const m of mods) {
+    // DLLs are read side by side (in workers); namespaces still go to the first mod in load order.
+    const reports = await Promise.all(mods.map((m) => (m.source === 'core' || m.source === 'dlc' || m.packageId === 'brrainz.harmony' ? null : this.analyzeMod(m))))
+    mods.forEach((m, i) => {
       a.packageIds.add(m.packageId)
       a.names.set(m.name.toLowerCase(), m.packageId)
-      if (m.source === 'core' || m.source === 'dlc' || m.packageId === 'brrainz.harmony') continue
-      for (const ns of (await this.analyzeMod(m)).namespaces) if (!a.namespaces.has(ns)) a.namespaces.set(ns, m.packageId)
-    }
-    return parsePlayerLog(file, a)
+      for (const ns of reports[i]?.namespaces ?? []) if (!a.namespaces.has(ns)) a.namespaces.set(ns, m.packageId)
+    })
+    return this.offload.run('parsePlayerLog', [file, a])
   }
 
   // Mod settings live in Config/Mod_<folder>_<Class>.xml; only files directly in that folder may be touched.
   settingsPath(path: string) {
+    // With no config folder set, relative() would measure from the working folder instead.
+    if (!this.settings.paths.configDir) throw new Error('Config folder is not set')
     const rel = relative(this.settings.paths.configDir, path)
     if (!rel || rel.includes('..') || /[\\/]/.test(rel) || isAbsolute(rel) || !/^Mod_.+\.xml$/i.test(rel)) throw new Error('Not a mod settings file')
     return path
@@ -760,11 +896,13 @@ export class Service {
     for (const m of this.mods) installed[m.packageId] = { name: m.name, mtime: m.mtime }
     history.push({ time: Date.now(), installed, active: this.config?.activeMods ?? [] })
     await writeJson(this.instFile('play-history.json'), history.slice(-10))
+    this.gen++
   }
 
   // Compares against the latest of: RimDeck's last launch snapshot, or the game log's start time (game started elsewhere).
   async changes(): Promise<ChangeReport> {
-    const history = await readJson<PlaySnapshot[]>(this.instFile('play-history.json'), [])
+    // Only read here, so a history that can't be read just means comparing against the game log.
+    const history = await readJson<PlaySnapshot[]>(this.instFile('play-history.json'), []).catch(() => [] as PlaySnapshot[])
     const snap = history[history.length - 1]
     let logStart = 0
     const log = await findPlayerLog(this.settings.paths.configDir)
@@ -772,8 +910,12 @@ export class Service {
       try {
         const fh = await open(log, 'r')
         const buf = Buffer.alloc(600)
-        const { bytesRead } = await fh.read(buf, 0, 600, 0)
-        await fh.close()
+        let bytesRead = 0
+        try {
+          bytesRead = (await fh.read(buf, 0, 600, 0)).bytesRead
+        } finally {
+          await fh.close()
+        }
         const head = buf.subarray(0, bytesRead).toString('utf8')
         const m = head.match(/^Started:\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)?)\s*([+-]\d\d:\d\d)?/m)
         logStart = m ? Date.parse(m[1].replace(' ', 'T') + (m[2] ?? '')) : (await stat(log)).mtimeMs
@@ -841,8 +983,24 @@ export class Service {
     return null
   }
 
+  // A double click or a repeated key press must not start the game twice.
+  launchBusy = false
+  launchedAt = 0
+
   /** Starts the game; with a save file, the Continue helper opens that save once loading is done. */
   async launch(continueSave?: string): Promise<{ ok: boolean; message: string }> {
+    if (this.launchBusy || Date.now() - this.launchedAt < 5000) return { ok: false, message: 'RimWorld is already starting' }
+    this.launchBusy = true
+    try {
+      const r = await this.startGame(continueSave)
+      if (r.ok) this.launchedAt = Date.now()
+      return r
+    } finally {
+      this.launchBusy = false
+    }
+  }
+
+  async startGame(continueSave?: string): Promise<{ ok: boolean; message: string }> {
     const p = this.settings.paths
     await this.recordPlay().catch(() => {})
     if (this.settings.backupSaveOnLaunch) await backupNewestSave(p.configDir, this.instFile('save-backups'))
@@ -1027,8 +1185,10 @@ export class Service {
   async checkUpdates(force = false): Promise<UpdateReport> {
     const r = this.updateReport
     if (!force && r && !r.error && Date.now() - r.checkedAt < DETAILS_TTL) return r
-    this.updateReport = await this.buildUpdateReport(force)
-    return this.updateReport
+    const epoch = this.installEpoch
+    const report = await this.buildUpdateReport(force)
+    if (epoch === this.installEpoch) this.updateReport = report
+    return report
   }
 
   async buildUpdateReport(force: boolean): Promise<UpdateReport> {
@@ -1118,7 +1278,11 @@ export class Service {
 
   dispose() {
     for (const w of this.watchers) w.close()
+    this.watchers = []
+    for (const t of [this.rescanTimer, this.laterRescan]) if (t) clearTimeout(t)
+    this.rescanTimer = this.laterRescan = null
     this.steamcmd.cancel()
+    void this.offload.close?.().catch(() => {})
   }
 }
 

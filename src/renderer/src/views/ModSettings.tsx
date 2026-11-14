@@ -10,11 +10,17 @@ type Scope = 'active' | 'all'
 
 export function ModSettingsView() {
   const s = useStore()
-  const { files, load } = useSettingsFiles()
+  const { files, error, load } = useSettingsFiles()
   const [q, setQ] = useState('')
   const [scope, setScope] = useState<Scope>('active')
+  // The shared list shows its own read errors (one toast, kept in `error`).
+  const [busy, setBusy] = useState(false)
+  const reload = () => {
+    setBusy(true)
+    void load().finally(() => setBusy(false))
+  }
   useEffect(() => {
-    if (!files) void load()
+    if (!files) reload()
   }, [])
 
   // Settings files belong to a mod folder; show each with its mod, active mods first.
@@ -37,7 +43,7 @@ export function ModSettingsView() {
     try {
       await api.resetModSettings(path)
       s.toast('ok', `${label} reset to defaults`)
-      void load()
+      reload()
     } catch (e: any) {
       s.toast('error', e.message)
     }
@@ -50,7 +56,7 @@ export function ModSettingsView() {
           <h1>Mod settings</h1>
           <p>Edit your mods’ settings without starting the game. Settings that were never changed are shown with the defaults from the mod’s code.</p>
         </div>
-        <button className="btn" onClick={() => load()}>
+        <button className="btn" disabled={busy} onClick={reload}>
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
@@ -104,7 +110,18 @@ export function ModSettingsView() {
             </tbody>
           </table>
         ) : (
-          <div className="empty">Reading mod settings…</div>
+          <div className="empty">
+            {error && !busy ? (
+              <>
+                Could not read the mod settings files.{' '}
+                <button className="btn sm" onClick={reload}>
+                  <RefreshCw size={12} /> Try again
+                </button>
+              </>
+            ) : (
+              'Reading mod settings…'
+            )}
+          </div>
         )}
         {files && !rows.length && <div className="empty">No saved mod settings{q ? ' match the search' : scope === 'active' ? ' for active mods' : ''}.</div>}
       </div>
@@ -145,7 +162,7 @@ function LeftoverSettings() {
             try {
               const n = await api.archiveSettings(orphans.map((f) => f.path))
               s.toast('ok', `Moved ${n} leftover settings files to backups`)
-              void load()
+              await load()
             } catch (e: any) {
               s.toast('error', e.message)
             }

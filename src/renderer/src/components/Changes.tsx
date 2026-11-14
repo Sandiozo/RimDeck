@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { History, ExternalLink, X, ListFilter } from 'lucide-react'
 import { useStore } from '../store'
 import { api } from '../api'
 import { timeAgo } from '../lib'
-import { ModIcon } from './ui'
+import { ModIcon, useEscape } from './ui'
 
 const dismissKey = (since: number) => `rimdeck.changes.dismissed.${since}`
 function isDismissed(since: number) {
@@ -49,6 +49,7 @@ export function ChangesBanner({ onFilter }: { onFilter: (q: string) => void }) {
         <button
           className="btn sm ghost icon"
           title="Dismiss until the next game launch"
+          aria-label="Dismiss"
           onClick={() => {
             try {
               localStorage.setItem(dismissKey(c.since), '1')
@@ -66,6 +67,8 @@ export function ChangesBanner({ onFilter }: { onFilter: (q: string) => void }) {
 
 function ChangesModal({ onClose }: { onClose: () => void }) {
   const s = useStore()
+  const ref = useRef<HTMLDivElement>(null)
+  useEscape(ref, onClose)
   const c = s.changes!
   const section = ({ title, ids, note }: { title: string; ids: string[]; note?: (pid: string) => string }) =>
     ids.length ? (
@@ -102,7 +105,7 @@ function ChangesModal({ onClose }: { onClose: () => void }) {
   const updatedActive = c.updated.filter((p) => active.has(p))
   const updatedInactive = c.updated.filter((p) => !active.has(p))
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <div ref={ref} className="overlay" onMouseDown={onClose}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <History size={20} color="var(--accent-text)" style={{ marginTop: 2 }} />

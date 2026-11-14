@@ -95,7 +95,7 @@ export function ProblemsView() {
         ))}
         <span className="grow" />
         {kind === 'version' && outdated.length > 0 && (
-          <button className="btn sm" onClick={() => s.setUser({ ignored: [...new Set([...s.app!.user.ignored, ...outdated])] })}>
+          <button className="btn sm" onClick={() => s.setUser({ ignored: [...new Set([...s.app!.user.ignored, ...outdated])] }).catch((e) => s.toast('error', `Could not mute the warnings: ${e.message}`))}>
             <EyeOff size={12} /> Mute all {outdated.length} version warnings
           </button>
         )}
@@ -103,10 +103,19 @@ export function ProblemsView() {
 
       {!groups.length && (
         <div className="panel">
-          <div className="empty" style={{ padding: 50 }}>
-            <div style={{ fontSize: 15, color: 'var(--ok)', fontWeight: 600, marginBottom: 4 }}>No problems found</div>
-            The current load order passed all checks.
-          </div>
+          {s.issues.length ? (
+            <div className="empty" style={{ padding: 50 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>No problems match this filter</div>
+              <button className="btn sm" onClick={() => { setSev('all'); setKind('all') }}>
+                Show all {s.issues.length}
+              </button>
+            </div>
+          ) : (
+            <div className="empty" style={{ padding: 50 }}>
+              <div style={{ fontSize: 15, color: 'var(--ok)', fontWeight: 600, marginBottom: 4 }}>No problems found</div>
+              The current load order passed all checks.
+            </div>
+          )}
         </div>
       )}
 

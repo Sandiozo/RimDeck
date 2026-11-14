@@ -1,8 +1,9 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import type { Replacement, RuleMap, RulesBundle } from '../../shared/types.ts'
-import { rimsortDir } from './rimsort.ts'
+import { lowerRuleKeys, rimsortDir } from './rimsort.ts'
+import { atomicWrite } from './store.ts'
 
 const COMMUNITY_URL = 'https://raw.githubusercontent.com/RimSort/Community-Rules-Database/main/communityRules.json'
 const REPLACEMENTS_URL = 'https://raw.githubusercontent.com/emipa606/UseThisInstead/main/replacements.json.gz'
@@ -12,26 +13,33 @@ function stripBom(s: string) {
   return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s
 }
 
-function lowerKeys(rules: Record<string, any>): RuleMap {
-  const out: RuleMap = {}
-  const lowerInner = (o: any) =>
-    o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.toLowerCase(), v])) : o
-  for (const [id, r] of Object.entries(rules ?? {})) {
-    out[id.toLowerCase()] = {
-      ...r,
-      loadAfter: lowerInner(r.loadAfter),
-      loadBefore: lowerInner(r.loadBefore),
-      incompatibleWith: lowerInner(r.incompatibleWith),
-    }
+// Both files hold thousands of entries; a cut-off or garbage download fails these checks.
+function communityOk(buf: Buffer) {
+  try {
+    const rules = JSON.parse(stripBom(buf.toString('utf8'))).rules
+    return buf.length > 1024 && !!rules && typeof rules === 'object' && !Array.isArray(rules) && Object.keys(rules).length >= 10
+  } catch {
+    return false
   }
-  return out
 }
 
-async function fetchTo(url: string, file: string): Promise<Buffer> {
+function replacementsOk(buf: Buffer) {
+  try {
+    const raw = buf[0] === 0x1f ? gunzipSync(buf) : buf
+    const rules = JSON.parse(stripBom(raw.toString('utf8'))).rules
+    return raw.length > 1024 && Array.isArray(rules) && rules.length >= 10
+  } catch {
+    return false
+  }
+}
+
+// A download replaces the cached copy only once it reads as a real rules file.
+async function fetchTo(url: string, file: string, ok: (buf: Buffer) => boolean): Promise<Buffer> {
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   const buf = Buffer.from(await res.arrayBuffer())
-  await writeFile(file, buf)
+  if (!ok(buf)) throw new Error('The download was incomplete or damaged')
+  await atomicWrite(file, buf)
   return buf
 }
 
@@ -44,11 +52,13 @@ async function cached(file: string): Promise<{ buf: Buffer; age: number } | null
   }
 }
 
-async function getFile(url: string, file: string, force: boolean, fallback?: string): Promise<{ buf: Buffer | null; fetchedAt: number; source: string }> {
-  const c = await cached(file)
+async function getFile(url: string, file: string, ok: (buf: Buffer) => boolean, force: boolean, fallback?: string): Promise<{ buf: Buffer | null; fetchedAt: number; source: string }> {
+  let c = await cached(file)
+  // A cache damaged before downloads were checked is treated as missing.
+  if (c && !ok(c.buf)) c = null
   if (c && !force && c.age < MAX_AGE) return { buf: c.buf, fetchedAt: Date.now() - c.age, source: 'cache' }
   try {
-    return { buf: await fetchTo(url, file), fetchedAt: Date.now(), source: 'network' }
+    return { buf: await fetchTo(url, file, ok), fetchedAt: Date.now(), source: 'network' }
   } catch {
     if (c) return { buf: c.buf, fetchedAt: Date.now() - c.age, source: 'cache (offline)' }
     if (fallback) {
@@ -64,13 +74,13 @@ export async function loadRules(dbDir: string, force = false): Promise<RulesBund
   await mkdir(dbDir, { recursive: true })
   const rimsort = rimsortDir()
   const [cr, rp] = await Promise.all([
-    getFile(COMMUNITY_URL, join(dbDir, 'communityRules.json'), force, rimsort && join(rimsort, 'communityRules.json')),
-    getFile(REPLACEMENTS_URL, join(dbDir, 'replacements.json.gz'), force, rimsort && join(rimsort, 'dbs', 'UseThisInstead', 'replacements.json.gz')),
+    getFile(COMMUNITY_URL, join(dbDir, 'communityRules.json'), communityOk, force, rimsort && join(rimsort, 'communityRules.json')),
+    getFile(REPLACEMENTS_URL, join(dbDir, 'replacements.json.gz'), replacementsOk, force, rimsort && join(rimsort, 'dbs', 'UseThisInstead', 'replacements.json.gz')),
   ])
   let community: RuleMap = {}
   let replacements: Replacement[] = []
   try {
-    if (cr.buf) community = lowerKeys(JSON.parse(stripBom(cr.buf.toString('utf8'))).rules)
+    if (cr.buf) community = lowerRuleKeys(JSON.parse(stripBom(cr.buf.toString('utf8'))).rules)
   } catch {}
   try {
     if (rp.buf) {

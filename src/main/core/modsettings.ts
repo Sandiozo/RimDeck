@@ -293,13 +293,13 @@ export async function moveToBackup(paths: string[], backupDir: string): Promise<
 
 // ---------- game detection ----------
 
-export function isGameRunning(): Promise<boolean> {
+function listProcesses(): Promise<boolean | null> {
   return new Promise((resolve) => {
     try {
       const win = process.platform === 'win32'
       const [cmd, args] = win ? ['tasklist', ['/fo', 'csv', '/nh']] : ['ps', ['-A', '-o', 'comm']]
       execFile(cmd, args, { windowsHide: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
-        if (err) return resolve(false)
+        if (err) return resolve(null)
         const lines = String(stdout).split(/\r?\n/)
         resolve(
           win
@@ -308,7 +308,17 @@ export function isGameRunning(): Promise<boolean> {
         )
       })
     } catch {
-      resolve(false)
+      resolve(null)
     }
   })
+}
+
+/** true/false, or null when the process list could not be read (so "not running" is not certain). */
+export async function gameRunningState(): Promise<boolean | null> {
+  return (await listProcesses()) ?? (await listProcesses())
+}
+
+// Callers only take a yes/no; when the check itself fails this still answers "no" (see gameRunningState).
+export async function isGameRunning(): Promise<boolean> {
+  return (await gameRunningState()) === true
 }

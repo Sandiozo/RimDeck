@@ -3,7 +3,7 @@ import { FileText, FlaskConical, Maximize2, RefreshCw, Search, TriangleAlert, X 
 import type { ResearchNode } from '@shared/types'
 import { useStore } from '../store'
 import { api } from '../api'
-import { loadDefs, modColor, useDefs } from '../defStore'
+import { ensureDefs, loadDefs, modColor, useDefs } from '../defStore'
 import { ModIcon, Seg } from '../components/ui'
 
 const SX = 190 // px per researchViewX unit (close to the game's own research screen)
@@ -16,6 +16,7 @@ const ALL_TABS = '__all'
 const ERA_ROWS = 18
 type Layout = 'tree' | 'era' | 'game'
 
+// Era colours, used for borders, dots and icons only: the pale ones are unreadable as text on the light theme.
 const TECH_COLOR: Record<string, string> = {
   Animal: '#9aa3b2',
   Neolithic: '#c9925a',
@@ -73,9 +74,10 @@ export function ResearchView() {
   const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!data && !busy) void loadDefs(s.active)
-  }, [])
+  const [focusOn, setFocusOn] = useState<string | null>(null)
+
+  // Reads on first visit and again when the data is cleared (a profile switch) while this page is open.
+  useEffect(() => ensureDefs(s.active), [data])
   const stale = !!data && scannedFor !== s.active.join('|')
 
   const nodes = useMemo(() => new Map((data?.research.nodes ?? []).map((n) => [n.defName, n])), [data])
@@ -188,20 +190,25 @@ export function ResearchView() {
   }
   useEffect(() => fit(), [tab, data, layoutMode])
 
+  // Pans once the project's tab is laid out (runs after fit() above, which a tab change triggers too).
+  useEffect(() => {
+    if (!focusOn) return
+    setFocusOn(null)
+    const box = boxRef.current
+    const p = layout.get(focusOn)
+    if (!box || !p) return
+    setView((v) => {
+      const k = Math.max(v.k, 0.8)
+      return { k, x: box.clientWidth / 2 - (p.left + W / 2) * k, y: box.clientHeight / 2 - (p.top + H / 2) * k }
+    })
+  }, [focusOn, layout])
+
   const focus = (d: string) => {
     const n = nodes.get(d)
     if (!n) return
     setSelected(d)
     if (tab !== ALL_TABS && n.tab !== tab) setTab(n.tab)
-    const box = boxRef.current
-    if (box)
-      setTimeout(() => {
-        setView((v) => {
-          const k = Math.max(v.k, 0.8)
-          const p = at(n)
-          return { k, x: box.clientWidth / 2 - (p.left + W / 2) * k, y: box.clientHeight / 2 - (p.top + H / 2) * k }
-        })
-      }, 0)
+    setFocusOn(d)
   }
 
   const onWheel = (e: WheelEvent) => {
@@ -222,6 +229,68 @@ export function ResearchView() {
     if (d) setView((v) => ({ ...v, x: d.vx + e.clientX - d.x, y: d.vy + e.clientY - d.y }))
   }
 
+  // Bands, edges and nodes don't depend on pan and zoom, so dragging only updates the transform around them.
+  const scene = useMemo(
+    () => (
+      <>
+        {layoutMode === 'era' &&
+          eraBands.map((b) => (
+            <div key={b.label} className="era-band" style={{ left: b.left - 12, width: b.width + 24, borderColor: TECH_COLOR[b.label] ?? 'var(--line-3)' }}>
+              <span>{b.label}</span> <span className="dim">{b.list.length}</span>
+            </div>
+          ))}
+        <svg className="research-edges" style={{ overflow: 'visible' }}>
+          {shown.flatMap((n) =>
+            n.prerequisites
+              .map((p) => nodes.get(p))
+              .filter((p): p is ResearchNode => !!p && shownSet.has(p.defName))
+              .map((p) => {
+                const x1 = at(p).left + W
+                const y1 = at(p).top + H / 2
+                const x2 = at(n).left
+                const y2 = at(n).top + H / 2
+                const mid = (x1 + x2) / 2
+                const on = chain ? chain.has(n.defName) && chain.has(p.defName) : false
+                return (
+                  <path
+                    key={p.defName + '>' + n.defName}
+                    d={`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`}
+                    className={'redge' + (on ? ' on' : chain ? ' dim' : '')}
+                  />
+                )
+              }),
+          )}
+        </svg>
+        {shown.map((n) => {
+          const dim = (chain && !chain.has(n.defName)) || !matches(n)
+          const overlap = issues.overlaps.has(n.defName)
+          const offTab = n.prerequisites.filter((p) => nodes.get(p) && !shownSet.has(p)).length
+          return (
+            <div
+              key={n.defName}
+              className={'rnode' + (selected === n.defName ? ' sel' : '') + (dim ? ' dim' : '') + (overlap ? ' overlap' : '') + (query && matches(n) ? ' hit' : '')}
+              style={{ left: at(n).left, top: at(n).top, width: W, height: H, borderColor: TECH_COLOR[n.techLevel] ?? 'var(--line-3)' }}
+              onClick={() => setSelected(selected === n.defName ? null : n.defName)}
+              title={`${n.label} — ${name(n.packageId)}` + (at(n).moved ? `
+Shown lower so that it is not hidden. In game it is at ${n.x.toFixed(2)}, ${n.y.toFixed(2)}.` : '')}
+            >
+              <span className="rstripe" style={{ background: modColor(n.packageId) }} />
+              <span className="rlabel">{n.label}</span>
+              <span className="rcost">
+                {n.cost}
+                {offTab > 0 && <span title="Has prerequisites on another tab"> ↗{offTab}</span>}
+                {overlap && <span style={{ color: 'var(--err)' }}> ●</span>}
+                {at(n).moved && <span title="Moved down for display"> ↓</span>}
+              </span>
+            </div>
+          )
+        })}
+      </>
+    ),
+    // `at`, `matches` and `name` read only layout, the filters and s.installed, all listed here.
+    [layoutMode, eraBands, shown, nodes, shownSet, layout, chain, selected, query, modFilter, era, issues, s.installed],
+  )
+
   const sel = selected ? nodes.get(selected) : undefined
   const issueCount = issues.overlaps.size + issues.missing.length + issues.loops.length
 
@@ -233,7 +302,9 @@ export function ResearchView() {
           <p>
             {data
               ? `${nodes.size} projects from ${new Set([...nodes.values()].map((n) => n.packageId)).size} mods, positions after XML patches (${data.research.ms} ms).`
-              : 'Reading research from every active mod…'}{' '}
+              : error && !busy
+                ? 'Research could not be read.'
+                : 'Reading research from every active mod…'}{' '}
             Changes that mods make to the tree in code at runtime are not shown.
           </p>
         </div>
@@ -299,12 +370,7 @@ export function ResearchView() {
           All
         </button>
         {eraCounts.map(([e, c]) => (
-          <button
-            key={e}
-            className={'chip click' + (era === e ? ' accent' : '')}
-            style={era === e ? undefined : { color: TECH_COLOR[e] ?? undefined }}
-            onClick={() => setEra(era === e ? '' : e)}
-          >
+          <button key={e} className={'chip click' + (era === e ? ' accent' : '')} onClick={() => setEra(era === e ? '' : e)}>
             <span className="dot" style={{ background: TECH_COLOR[e] ?? 'var(--text-4)' }} /> {e} · {c}
           </button>
         ))}
@@ -313,58 +379,7 @@ export function ResearchView() {
       <div className="research-wrap">
         <div ref={boxRef} className="research-canvas" onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={() => (drag.current = null)} onMouseLeave={() => (drag.current = null)}>
           <div className="research-inner" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
-            {layoutMode === 'era' &&
-              eraBands.map((b) => (
-                <div key={b.label} className="era-band" style={{ left: b.left - 12, width: b.width + 24, borderColor: TECH_COLOR[b.label] ?? 'var(--line-3)' }}>
-                  <span style={{ color: TECH_COLOR[b.label] ?? 'var(--text-2)' }}>{b.label}</span> <span className="dim">{b.list.length}</span>
-                </div>
-              ))}
-            <svg className="research-edges" style={{ overflow: 'visible' }}>
-              {shown.flatMap((n) =>
-                n.prerequisites
-                  .map((p) => nodes.get(p))
-                  .filter((p): p is ResearchNode => !!p && shownSet.has(p.defName))
-                  .map((p) => {
-                    const x1 = at(p).left + W
-                    const y1 = at(p).top + H / 2
-                    const x2 = at(n).left
-                    const y2 = at(n).top + H / 2
-                    const mid = (x1 + x2) / 2
-                    const on = chain ? chain.has(n.defName) && chain.has(p.defName) : false
-                    return (
-                      <path
-                        key={p.defName + '>' + n.defName}
-                        d={`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`}
-                        className={'redge' + (on ? ' on' : chain ? ' dim' : '')}
-                      />
-                    )
-                  }),
-              )}
-            </svg>
-            {shown.map((n) => {
-              const dim = (chain && !chain.has(n.defName)) || !matches(n)
-              const overlap = issues.overlaps.has(n.defName)
-              const offTab = n.prerequisites.filter((p) => nodes.get(p) && !shownSet.has(p)).length
-              return (
-                <div
-                  key={n.defName}
-                  className={'rnode' + (selected === n.defName ? ' sel' : '') + (dim ? ' dim' : '') + (overlap ? ' overlap' : '') + (query && matches(n) ? ' hit' : '')}
-                  style={{ left: at(n).left, top: at(n).top, width: W, height: H, borderColor: TECH_COLOR[n.techLevel] ?? 'var(--line-3)' }}
-                  onClick={() => setSelected(selected === n.defName ? null : n.defName)}
-                  title={`${n.label} — ${name(n.packageId)}` + (at(n).moved ? `
-Shown lower so that it is not hidden. In game it is at ${n.x.toFixed(2)}, ${n.y.toFixed(2)}.` : '')}
-                >
-                  <span className="rstripe" style={{ background: modColor(n.packageId) }} />
-                  <span className="rlabel">{n.label}</span>
-                  <span className="rcost">
-                    {n.cost}
-                    {offTab > 0 && <span title="Has prerequisites on another tab"> ↗{offTab}</span>}
-                    {overlap && <span style={{ color: 'var(--err)' }}> ●</span>}
-                    {at(n).moved && <span title="Moved down for display"> ↓</span>}
-                  </span>
-                </div>
-              )
-            })}
+            {scene}
           </div>
         </div>
 
@@ -385,7 +400,9 @@ Shown lower so that it is not hidden. In game it is at ${n.x.toFixed(2)}, ${n.y.
                 <span className="chip click" onClick={() => { s.showMod(sel.packageId) }}>
                   <ModIcon mod={s.installed.get(sel.packageId)?.[0]} size={12} /> {name(sel.packageId)}
                 </span>
-                <span className="chip" style={{ color: TECH_COLOR[sel.techLevel] }}>{sel.techLevel}</span>
+                <span className="chip">
+                  <span className="dot" style={{ background: TECH_COLOR[sel.techLevel] ?? 'var(--text-4)' }} /> {sel.techLevel}
+                </span>
                 <span className="chip">{sel.cost} pts</span>
                 <span className="chip mono">
                   {sel.x.toFixed(2)}, {sel.y.toFixed(2)}

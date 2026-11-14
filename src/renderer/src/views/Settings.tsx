@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { FolderOpen, RefreshCw, Download, WandSparkles } from 'lucide-react'
+import { FolderOpen, RefreshCw, Download, WandSparkles, Bug } from 'lucide-react'
 import type { Paths, SortMode, ThemeMode, UpdateState } from '@shared/types'
+import { REPO_URL } from '@shared/bugreport'
 import { useStore } from '../store'
-import { api, onEvent } from '../api'
+import { api, isElectron, onEvent } from '../api'
 import { Seg, Toggle } from '../components/ui'
 import { timeAgo } from '../lib'
 import { InstallsPanel } from '../components/Installs'
+import { openBugReport } from '../components/BugReport'
 
 // Rust, amber, moss, steel, verdigris, brick and bone.
 const ACCENTS: [string, string][] = [
@@ -45,7 +47,9 @@ export function SettingsView() {
   }
 
   return (
-    <div className="page" style={{ maxWidth: 980 }}>
+    // The page scrolls at full width so its scrollbar sits at the window edge; the content keeps a readable width.
+    <div className="page">
+      <div style={{ maxWidth: 928 }}>
       <div className="page-head">
         <div className="grow">
           <h1>Settings</h1>
@@ -197,12 +201,40 @@ export function SettingsView() {
 
       <div className="panel">
         <div className="panel-head">
+          <h3>Help</h3>
+        </div>
+        <div className="setting">
+          <div className="label">
+            <b>Report a bug</b>
+            <span>You read the whole report and choose where it goes. Nothing is sent on its own.</span>
+          </div>
+          <span className="grow" />
+          <button className="btn" onClick={openBugReport}>
+            <Bug size={14} /> Report a bug
+          </button>
+        </div>
+        {isElectron && (
+          <div className="setting">
+            <div className="label">
+              <b>Error log</b>
+              <span>RimDeck notes its own errors there, with your user name removed.</span>
+            </div>
+            <span className="grow" />
+            <button className="btn" onClick={() => api.openLogFolder().catch((e) => s.toast('error', `Could not open the log folder: ${e.message}`))}>
+              <FolderOpen size={14} /> Open log folder
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="panel">
+        <div className="panel-head">
           <h3>Appearance and data</h3>
         </div>
         <div className="setting">
           <div className="label">
             <b>Theme</b>
-            <span>System follows the Windows light or dark setting</span>
+            <span>System follows your computer’s light or dark setting</span>
           </div>
           <Seg<ThemeMode>
             value={st.theme ?? 'dark'}
@@ -241,10 +273,8 @@ export function SettingsView() {
             onClick={async () => {
               const r = await api.importRimSort()
               if (!r.found) return s.toast('error', 'No RimSort data found')
-              await s.reload()
-              const app = await api.getState()
-              useStore.setState({ app })
-              s.rederive()
+              // Only the rules, ignored mods and notes changed; the mod folders don't need a rescan.
+              await s.refreshState()
               s.toast('ok', `Imported ${r.rules} rules, ${r.ignored} ignored mods, ${r.meta} notes/colors`)
             }}
           >
@@ -261,6 +291,7 @@ export function SettingsView() {
             Unmute all
           </button>
         </div>
+      </div>
       </div>
     </div>
   )
@@ -319,7 +350,7 @@ function AboutPanel() {
             <RefreshCw size={13} className={busy ? 'spin' : ''} /> Check for updates
           </button>
         )}
-        <button className="btn ghost" onClick={() => api.openUrl('https://github.com/Sandiozo/RimDeck')}>
+        <button className="btn ghost" onClick={() => api.openUrl(REPO_URL)}>
           GitHub
         </button>
       </div>

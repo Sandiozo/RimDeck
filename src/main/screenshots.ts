@@ -4,15 +4,41 @@ import { join } from 'node:path'
 
 // `RD_SCREENSHOTS=<dir> electron .` walks the main screens and saves PNGs for the README.
 // Screens that show local folder paths (Settings, Game log) are skipped on purpose.
+
+// Selects a mod in the Mods view and centres its row; the shots call it as `(${SELECT_MOD})(pid)`.
+// The mod lists only render the rows near their view, so a row further down is not in the page yet:
+// each list is paged through by its own height until the row turns up, and put back at the top if
+// the mod is not in it. A mod in neither list is left alone. Each step waits for the list to render
+// its new rows (the next frame, 100 ms at most) and the search stops after 20 seconds.
+const SELECT_MOD = `async (pid) => {
+  const sel = '[data-pid="' + CSS.escape(pid) + '"]'
+  const settle = () => new Promise(r => { requestAnimationFrame(() => setTimeout(r)); setTimeout(r, 100) })
+  for (let i = 0; i < 40 && !document.querySelector('.mods-view .pane .list'); i++) await new Promise(r => setTimeout(r, 250))
+  const until = Date.now() + 20000
+  let row = document.querySelector(sel)
+  for (const list of document.querySelectorAll('.mods-view .pane .list')) {
+    if (row || Date.now() > until) break
+    list.scrollTop = 0
+    await settle()
+    row = list.querySelector(sel)
+    while (!row && Date.now() < until) {
+      const before = list.scrollTop
+      list.scrollTop = before + list.clientHeight
+      await settle()
+      row = list.querySelector(sel)
+      if (Math.abs(list.scrollTop - before) < 1) break // at the bottom
+    }
+    if (!row) list.scrollTop = 0
+  }
+  row?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+  row?.scrollIntoView({ block: 'center' })
+}`
+
 const SHOTS: { file: string; wait: number; script: string }[] = [
   {
     file: 'mods.png',
     wait: 2500,
-    script: `(() => {
-      const row = document.querySelector('[data-pid="vanillaexpanded.vee"]')
-      row?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
-      row?.scrollIntoView({ block: 'center' })
-    })()`,
+    script: `(${SELECT_MOD})('vanillaexpanded.vee')`,
   },
   {
     file: 'sort.png',
@@ -94,14 +120,11 @@ const SHOTS: { file: string; wait: number; script: string }[] = [
     // Light theme, shown without changing the saved setting.
     file: 'light.png',
     wait: 2500,
-    script: `(() => {
+    script: `(async () => {
       document.querySelector('.rail-btn[title="Mods"]')?.click()
       document.documentElement.dataset.theme = 'light'
-      setTimeout(() => {
-        const row = document.querySelector('[data-pid="vanillaexpanded.vee"]')
-        row?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
-        row?.scrollIntoView({ block: 'center' })
-      }, 300)
+      await new Promise(r => setTimeout(r, 300))
+      await (${SELECT_MOD})('vanillaexpanded.vee')
     })()`,
   },
 ]

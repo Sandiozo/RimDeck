@@ -1,4 +1,5 @@
-import { copyFile, mkdir, open, readdir, rm, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, mkdir, open, readdir, rm, stat, utimes } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { SaveSummary } from '../../shared/types.ts'
 import { parseXml, strList, text } from './xml.ts'
@@ -42,6 +43,8 @@ export async function readSaveMeta(file: string): Promise<SaveSummary | null> {
 }
 
 export async function listSaves(configDir: string): Promise<SaveSummary[]> {
+  // An empty folder setting would otherwise look in the working folder.
+  if (!configDir) return []
   const dir = savesDir(configDir)
   let files: string[] = []
   try {
@@ -54,6 +57,7 @@ export async function listSaves(configDir: string): Promise<SaveSummary[]> {
 }
 
 export async function backupNewestSave(configDir: string, backupDir: string): Promise<string | null> {
+  if (!configDir) return null
   const dir = savesDir(configDir)
   try {
     const files = await readdir(dir)
@@ -65,7 +69,7 @@ export async function backupNewestSave(configDir: string, backupDir: string): Pr
     }
     if (!newest) return null
     await mkdir(backupDir, { recursive: true })
-    // A copy keeps the save's file time, so a backup with the same name and time is the same save:
+    // A backup carries the save's file time, so one with the same save name and time is the same save:
     // launching again without having saved in between doesn't copy it again.
     const existing = (await readdir(backupDir)).filter((b) => b.toLowerCase().endsWith('.rws'))
     for (const b of existing) {
@@ -73,8 +77,20 @@ export async function backupNewestSave(configDir: string, backupDir: string): Pr
       const st = await stat(join(backupDir, b)).catch(() => null)
       if (st && Math.abs(st.mtimeMs - newest.t) < 2) return join(backupDir, b)
     }
-    const dest = join(backupDir, `${new Date().toISOString().slice(0, 10)}-${newest.f}`)
-    await copyFile(join(dir, newest.f), dest)
+    // 2026-11-14T10-30-15-Colony.rws (UTC); older backups are named by the day only. Never overwrites one.
+    const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+    let dest = ''
+    for (let n = 1; ; n++) {
+      dest = join(backupDir, `${stamp}${n > 1 ? `-${n}` : ''}-${newest.f}`)
+      try {
+        await copyFile(join(dir, newest.f), dest, constants.COPYFILE_EXCL)
+        break
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST' || n >= 20) throw e
+      }
+    }
+    // Windows keeps the save's time on a copy; elsewhere the copy may get the current time, so set it.
+    await utimes(dest, new Date(), newest.t / 1000).catch(() => {})
     await pruneSaveBackups(backupDir, 10)
     return dest
   } catch {

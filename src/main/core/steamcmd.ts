@@ -1,10 +1,11 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
-import { chmod, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { chmod, cp, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { inflateRawSync } from 'node:zlib'
 import type { DownloadJob, DownloadsState, SteamAccount, SteamLoginState, WorkshopDetails } from '../../shared/types.ts'
 import { APP_ID } from './workshop.ts'
-import { exists } from './store.ts'
+import { exists, renameRetry } from './store.ts'
 
 const IS_WIN = process.platform === 'win32'
 const INSTALLER = IS_WIN
@@ -53,6 +54,10 @@ export const validSteamUser = (u: string) => STEAM_USER.test(u)
 
 // Anonymous failures that a Steam account owning RimWorld can fix.
 export const NEEDS_LOGIN = /access denied|no subscription|not logged on|license|logon|login/i
+// SteamCMD lines about signing in (as opposed to one item), e.g. "Logging in user 'x' to Steam Public...FAILED (…)".
+const LOGIN_LINE = /logg?ing in|log ?in|log ?on|password|credentials|steam guard/i
+// A pending password is forgotten after this long; Steam Guard codes expire well before.
+const PASSWORD_TTL = 10 * 60 * 1000
 
 /** A private SteamCMD install (default: %APPDATA%/RimDeck/steamcmd) used only for anonymous Workshop downloads. */
 export class SteamCmd {
@@ -85,7 +90,10 @@ export class SteamCmd {
     if (IS_WIN) {
       for (const f of unzip(buf)) {
         const dest = resolve(this.dir, f.name)
-        if (relative(this.dir, dest).startsWith('..')) continue
+        const rel = relative(this.dir, dest)
+        // Entries that would land outside the folder (".." segments, absolute or other-drive paths) are skipped.
+        if (!rel || isAbsolute(rel) || rel.split(/[\\/]/)[0] === '..') continue
+        await mkdir(dirname(dest), { recursive: true })
         await writeFile(dest, f.data)
       }
     } else {
@@ -105,26 +113,66 @@ export class SteamCmd {
 
   exec(args: string[], onLine: (l: string) => void): Promise<number | null> {
     return new Promise((ok, fail) => {
-      const child = spawn(this.exe, args, { cwd: this.dir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+      // Off Windows it gets its own process group, so cancel() also stops the client that steamcmd.sh starts.
+      const child = spawn(this.exe, args, { cwd: this.dir, windowsHide: true, detached: !IS_WIN, stdio: ['ignore', 'pipe', 'pipe'] })
       this.child = child
-      let rest = ''
-      const feed = (chunk: Buffer) => {
-        const parts = (rest + chunk.toString('utf8')).split(/\r\n|\r|\n/)
-        rest = parts.pop() ?? ''
-        for (const p of parts) {
-          const line = p.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trimEnd()
-          if (line.trim()) onLine(line)
+      const emit = (p: string) => {
+        const line = p.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trimEnd()
+        if (line.trim()) onLine(line)
+      }
+      // One decoder and partial line per stream, so characters and lines split across chunks stay whole.
+      const reader = () => {
+        const decoder = new StringDecoder('utf8')
+        let rest = ''
+        return {
+          feed: (chunk: Buffer) => {
+            const parts = (rest + decoder.write(chunk)).split(/\r\n|\r|\n/)
+            rest = parts.pop() ?? ''
+            parts.forEach(emit)
+          },
+          end: () => {
+            const last = rest + decoder.end()
+            rest = ''
+            last.split(/\r\n|\r|\n/).forEach(emit)
+          },
         }
       }
-      child.stdout!.on('data', feed)
-      child.stderr!.on('data', feed)
-      child.on('error', fail)
+      const out = reader()
+      const err = reader()
+      child.stdout!.on('data', out.feed)
+      child.stderr!.on('data', err.feed)
+      child.on('error', (e) => {
+        if (this.child === child) this.child = null
+        fail(e)
+      })
       child.on('close', (code) => {
-        if (rest.trim()) onLine(rest.trim())
-        this.child = null
+        out.end()
+        err.end()
+        if (this.child === child) this.child = null
         ok(code)
       })
     })
+  }
+
+  get consoleLog() {
+    return join(this.dir, 'logs', 'console_log.txt')
+  }
+
+  async consoleLogMark(): Promise<{ size: number; ino: number }> {
+    const st = await stat(this.consoleLog).catch(() => null)
+    return { size: st?.size ?? 0, ino: st?.ino ?? 0 }
+  }
+
+  /** What SteamCMD wrote to its own console log since `mark` (it has the results even when stdout was lost). */
+  async consoleLogSince(mark: { size: number; ino: number }): Promise<string> {
+    try {
+      const st = await stat(this.consoleLog)
+      const buf = await readFile(this.consoleLog)
+      // A new or shorter file means SteamCMD started a fresh log in this run.
+      return buf.subarray(st.ino !== mark.ino || buf.length < mark.size ? 0 : mark.size).toString('utf8')
+    } catch {
+      return ''
+    }
   }
 
   /**
@@ -140,41 +188,72 @@ export class SteamCmd {
     const login = user && validSteamUser(user) ? `login ${user}` : 'login anonymous'
     await writeFile(script, ['@ShutdownOnFailedCommand 0', '@NoPromptForPassword 1', login, ...ids.map((id) => `workshop_download_item ${APP_ID} ${id}`), 'quit', ''].join('\n'))
     const want = new Set(ids)
+    const logStart = await this.consoleLogMark()
+    // The item's folder follows from SteamCMD's layout; the printed path is only used when that folder is
+    // missing (SteamCMD's output is not always decoded right, e.g. accented user names on Windows).
+    const pending: Promise<void>[] = []
+    const succeed = (id: string, printed: string) => {
+      if (!want.has(id) || result.done.has(id)) return
+      const expected = join(this.contentDir, id)
+      result.failed.delete(id)
+      result.done.set(id, expected)
+      pending.push(
+        (async () => {
+          const dir = (await exists(expected)) || !(await exists(printed)) ? expected : printed
+          result.done.set(id, dir)
+          onItem(id, true, dir)
+        })(),
+      )
+    }
+    const fail = (id: string, reason: string) => {
+      if (!want.has(id) || result.done.has(id) || result.failed.has(id)) return
+      result.failed.set(id, reason)
+      onItem(id, false, reason)
+    }
+    const parse = (line: string) => {
+      let m = line.match(/Success\. Downloaded item (\d+) to "([^"]+)"/)
+      if (m) return succeed(m[1], m[2])
+      m = line.match(/ERROR! (?:Download item (\d+) failed \(([^)]*)\)|Timeout downloading item (\d+))/)
+      if (m) return fail(m[1] ?? m[3], m[2] ?? 'Timeout')
+      // A failure that names an item fails only that item; only a failed sign-in ends the whole session.
+      const f = line.match(/FAILED \(([^)]*)\)|Login Failure: (.+)/)
+      if (!f) return
+      const item = line.match(/item (\d+)/i)?.[1]
+      if (item && want.has(item)) return fail(item, f[1] ?? f[2])
+      if (user && !result.loginFailed && !result.done.size && (f[2] || LOGIN_LINE.test(line))) result.loginFailed = f[1] ?? f[2]
+    }
     const code = await this.exec(['+runscript', script], (line) => {
       onLine(line)
-      const lf = line.match(/FAILED \(([^)]*)\)|Login Failure: (.+)/)
-      if (lf && user && !result.loginFailed && !result.done.size) result.loginFailed = lf[1] ?? lf[2]
-      let m = line.match(/Success\. Downloaded item (\d+) to "([^"]+)"/)
-      if (m && want.has(m[1])) {
-        result.done.set(m[1], m[2])
-        return onItem(m[1], true, m[2])
-      }
-      m = line.match(/ERROR! (?:Download item (\d+) failed \(([^)]*)\)|Timeout downloading item (\d+))/)
-      if (m) {
-        const id = m[1] ?? m[3]
-        const reason = m[2] ?? 'Timeout'
-        if (want.has(id) && !result.done.has(id)) {
-          result.failed.set(id, reason)
-          onItem(id, false, reason)
-        }
-      }
+      parse(line)
     })
+    await Promise.all(pending)
+    if (!this.cancelled && ids.some((id) => !result.done.has(id) && !result.failed.has(id))) {
+      // Output can be lost when SteamCMD exits abruptly; its console log still has what it reported in this run.
+      for (const line of (await this.consoleLogSince(logStart)).split(/\r\n|\r|\n/)) parse(line)
+      await Promise.all(pending)
+    }
+    // A folder SteamCMD never reported as finished may be a partial download, so it is not used.
     for (const id of ids)
-      if (!result.done.has(id) && !result.failed.has(id)) {
-        // Output can be lost when SteamCMD exits abruptly; trust the folder if it is there.
-        const dir = join(this.contentDir, id)
-        if (!this.cancelled && (await exists(dir))) result.done.set(id, dir)
-        else result.failed.set(id, this.cancelled ? 'Cancelled' : `No result from SteamCMD (exit ${code})`)
-      }
+      if (!result.done.has(id) && !result.failed.has(id)) result.failed.set(id, this.cancelled ? 'Cancelled' : `No result from SteamCMD (exit ${code})`)
     return result
   }
 
   cancel() {
     this.cancelled = true
-    const pid = this.child?.pid
-    if (!pid) return
-    if (IS_WIN) execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
-    else this.child?.kill()
+    const child = this.child
+    const pid = child?.pid
+    if (!child || !pid) return
+    if (IS_WIN) return void execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, () => {})
+    // steamcmd.sh runs the real client as its own child, so the whole process group is stopped.
+    const kill = (signal: NodeJS.Signals) => {
+      try {
+        process.kill(-pid, signal)
+      } catch {
+        child.kill(signal)
+      }
+    }
+    kill('SIGTERM')
+    setTimeout(() => this.child === child && kill('SIGKILL'), 5000).unref()
   }
 
   /**
@@ -252,23 +331,64 @@ export class SteamCmd {
 
 /**
  * Moves a finished download from SteamCMD's content folder into the local mods folder.
- * An existing copy is handed to `retire` (Recycle Bin) first and never deleted outright.
+ * The new copy is put next to the target under a temporary name first, then the two are swapped, so a
+ * failure part way leaves the old copy in place. The old copy is then handed to `retire` (Recycle Bin)
+ * and never deleted outright. Returns a note for the user when the old copy had to stay behind.
  */
-export async function installInto(src: string, dest: string, id: string, retire: (p: string) => Promise<void>) {
-  if (await exists(dest)) await retire(dest)
-  if (await exists(dest)) throw new Error(`Could not move the old copy out of ${dest}`)
+export async function installInto(src: string, dest: string, id: string, retire: (p: string) => Promise<void>): Promise<string | undefined> {
+  const parent = dirname(dest)
+  const prefix = `.rimdeck-new-${id}-`
+  // A copy left half-done by a crash in an earlier run.
+  for (const n of await readdir(parent).catch(() => [] as string[])) if (n.startsWith(prefix)) await rm(join(parent, n), { recursive: true, force: true }).catch(() => {})
+  const stamp = Date.now()
+  const staged = join(parent, `${prefix}${stamp}`)
   try {
-    await rename(src, dest)
+    await renameRetry(src, staged)
   } catch {
     // Different drive (SteamCMD lives in %APPDATA%): copy, then remove our own staging copy.
-    await cp(src, dest, { recursive: true })
-    await rm(src, { recursive: true, force: true })
+    try {
+      await cp(src, staged, { recursive: true })
+    } catch (e) {
+      await rm(staged, { recursive: true, force: true }).catch(() => {})
+      throw e
+    }
+    await rm(src, { recursive: true, force: true }).catch(() => {}) // cleared again before the next download
   }
-  // Lets the scanner (and RimWorld) tie the local copy back to its Workshop page.
-  const about = (await readdir(dest).catch(() => [] as string[])).find((n) => n.toLowerCase() === 'about')
-  if (about) {
-    const entries = await readdir(join(dest, about))
-    if (!entries.some((n) => n.toLowerCase() === 'publishedfileid.txt')) await writeFile(join(dest, about, 'PublishedFileId.txt'), id, 'utf8')
+  try {
+    // Lets the scanner (and RimWorld) tie the local copy back to its Workshop page.
+    const about = (await readdir(staged).catch(() => [] as string[])).find((n) => n.toLowerCase() === 'about')
+    if (about) {
+      const entries = await readdir(join(staged, about))
+      if (!entries.some((n) => n.toLowerCase() === 'publishedfileid.txt')) await writeFile(join(staged, about, 'PublishedFileId.txt'), id, 'utf8')
+    }
+  } catch (e) {
+    await rm(staged, { recursive: true, force: true }).catch(() => {})
+    throw e
+  }
+  let old: string | null = null
+  if (await exists(dest)) {
+    // Keeps the folder name recognisable if it has to be restored from the Recycle Bin.
+    old = join(parent, `${basename(dest)}.rimdeck-old-${stamp}`)
+    try {
+      await renameRetry(dest, old)
+    } catch {
+      await rm(staged, { recursive: true, force: true }).catch(() => {})
+      throw new Error(`Could not move the old copy out of ${dest}`)
+    }
+  }
+  try {
+    await renameRetry(staged, dest)
+  } catch (e) {
+    if (old) await renameRetry(old, dest).catch(() => {})
+    await rm(staged, { recursive: true, force: true }).catch(() => {})
+    throw e
+  }
+  if (!old) return
+  try {
+    await retire(old)
+  } catch {
+    // The new copy is in place; the old one may be partly moved already, so it is left for the user.
+    if (await exists(old)) return `the old copy could not be moved to the ${IS_WIN ? 'Recycle Bin' : 'Trash'}. Delete ${old} so the mod isn't loaded twice.`
   }
 }
 
@@ -295,6 +415,9 @@ export class DownloadQueue {
   loginState: SteamLoginState = { phase: 'idle' }
   // Held only while a Steam Guard code is pending, so the retry can send it; never written anywhere.
   pendingPassword: string | null = null
+  pendingTimer: NodeJS.Timeout | null = null
+  // A logout asked for while SteamCMD was busy; it runs as soon as SteamCMD is free.
+  logoutUser: string | null = null
 
   constructor(steamcmd: SteamCmd, hooks: QueueHooks) {
     this.steamcmd = steamcmd
@@ -328,8 +451,24 @@ export class DownloadQueue {
   }
 
   setLogin(s: SteamLoginState) {
+    // The password is kept only while the user is being asked for a code.
+    if (s.phase !== 'need-code') this.forgetPassword()
     this.loginState = s
     this.changed(true)
+  }
+
+  holdPassword(password: string | null) {
+    this.forgetPassword()
+    if (!password) return
+    this.pendingPassword = password
+    this.pendingTimer = setTimeout(() => this.forgetPassword(), PASSWORD_TTL)
+    this.pendingTimer.unref?.()
+  }
+
+  forgetPassword() {
+    this.pendingPassword = null
+    if (this.pendingTimer) clearTimeout(this.pendingTimer)
+    this.pendingTimer = null
   }
 
   /**
@@ -352,27 +491,28 @@ export class DownloadQueue {
       const r = await this.steamcmd.login(user, password, code, (l) => this.line(l), () =>
         this.setLogin({ phase: 'confirm-mobile', message: 'Approve this login in the Steam Mobile app' }),
       )
-      if (r.ok) {
-        this.pendingPassword = null
+      if (r.ok && this.logoutUser === user) {
+        // Logged out while this was still running; the queued logout ends the new session too.
+        this.setLogin({ phase: 'idle', message: `Logged out ${user}` })
+      } else if (r.ok) {
         this.account = { ...this.account, user, loggedIn: true }
         this.setLogin({ phase: 'idle', message: `Logged in as ${user}` })
       } else if (r.need === 'email' || r.need === '2fa') {
-        this.pendingPassword = password
+        this.holdPassword(password)
         const again = code ? 'The code was not accepted. ' : ''
         this.setLogin({ phase: 'need-code', codeKind: r.need, message: again + (r.need === 'email' ? 'Enter the Steam Guard code sent to your email' : 'Enter the code from your Steam Mobile authenticator') })
       } else if (r.need === 'password') {
-        this.pendingPassword = null
         this.account = { ...this.account, loggedIn: false }
         this.setLogin({ phase: 'need-password', message: r.message || (password ? 'Steam asked for the password again' : 'No saved session. Enter your password.') })
       } else {
-        this.pendingPassword = null
         this.account = { ...this.account, loggedIn: false }
-        this.setLogin({ phase: 'error', message: r.message })
+        this.setLogin(r.message === 'Cancelled' ? { phase: 'idle', message: 'Login cancelled' } : { phase: 'error', message: r.message })
       }
     } catch (e: any) {
-      this.pendingPassword = null
       this.setLogin({ phase: 'error', message: String(e?.message ?? e) })
     } finally {
+      password = null
+      if (this.loginState.phase !== 'need-code') this.forgetPassword()
       this.running = false
       this.phase = 'idle'
       await this.saveAccount().catch(() => {})
@@ -382,26 +522,35 @@ export class DownloadQueue {
   }
 
   cancelLogin() {
-    this.pendingPassword = null
+    this.forgetPassword()
     if (this.phase === 'login') this.steamcmd.cancel()
     this.setLogin({ phase: 'idle', message: 'Login cancelled' })
   }
 
   async logout() {
     const user = this.account.user
-    this.pendingPassword = null
+    this.forgetPassword()
     this.account = { user: '', loggedIn: false, useForDownloads: false }
+    // A login still running would sign the account back in.
+    if (this.phase === 'login') this.steamcmd.cancel()
     this.setLogin({ phase: 'idle', message: user ? `Logged out ${user}` : undefined })
     await this.saveAccount()
-    if (user && !this.running && (await this.steamcmd.installed())) {
-      this.running = true
-      try {
-        await this.steamcmd.logout(user, (l) => this.line(l))
-      } finally {
-        this.running = false
-        this.changed(true)
-        void this.pump()
-      }
+    if (user) this.logoutUser = user
+    await this.endSession()
+  }
+
+  /** Ends SteamCMD's cached session for a logged-out account, once nothing else is using SteamCMD. */
+  async endSession() {
+    const user = this.logoutUser
+    if (!user || this.running) return
+    this.logoutUser = null
+    this.running = true
+    try {
+      if (await this.steamcmd.installed()) await this.steamcmd.logout(user, (l) => this.line(l))
+    } finally {
+      this.running = false
+      this.changed(true)
+      void this.pump()
     }
   }
 
@@ -519,9 +668,9 @@ export class DownloadQueue {
             id,
             (async () => {
               try {
-                await installInto(src, dest, id, (p) => this.hooks.retire(p))
+                const note = await installInto(src, dest, id, (p) => this.hooks.retire(p))
                 await this.hooks.installed(id, dest, this.jobs.find((j) => j.workshopId === id)!)
-                this.set(id, { status: 'done', path: dest, message: undefined, finishedAt: Date.now() })
+                this.set(id, { status: 'done', path: dest, message: note, finishedAt: Date.now() })
                 installedAny = true
               } catch (e: any) {
                 this.set(id, { status: 'failed', message: `Install failed: ${e?.message ?? e}`, finishedAt: Date.now() })
@@ -564,6 +713,7 @@ export class DownloadQueue {
       this.phase = 'idle'
       this.running = false
       this.changed(true)
+      void this.endSession().catch(() => {}) // a logout that came in while this was running
       if (installedAny) await this.hooks.finished().catch(() => {})
     }
   }

@@ -14,23 +14,21 @@ export function SteamAccountPanel() {
   const account = d?.account
   const login = d?.login ?? { phase: 'idle' as const }
   const [user, setUser] = useState(account?.user ?? '')
-  const [asking, setAsking] = useState(false) // password field shown
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   useEffect(() => {
     if (account?.user) setUser(account.user)
   }, [account?.user])
+  // The input shown follows the login phase; a typed password never outlives the password step.
+  const asking = login.phase === 'need-password'
   useEffect(() => {
-    if (login.phase === 'need-password') setAsking(true)
-    if (login.phase === 'idle' && account?.loggedIn) setAsking(false)
-  }, [login.phase, account?.loggedIn])
-  useEffect(() => () => setPassword(''), [])
+    if (!asking) setPassword('')
+  }, [asking])
 
   const run = (p: Promise<any>) => p.then((st) => st && s.setDownloads(st)).catch((e) => s.toast('error', e.message))
   // First try the session SteamCMD may have cached; it answers "need password" when there is none.
   const start = () => {
     if (!user.trim()) return
-    setAsking(false)
     run(api.steamLogin(user.trim()))
   }
   const submitPassword = () => {
@@ -45,8 +43,8 @@ export function SteamAccountPanel() {
     setCode('')
   }
   const cancel = () => {
-    setAsking(false)
     setPassword('')
+    setCode('')
     run(api.steamLoginCancel())
   }
 
@@ -77,7 +75,7 @@ export function SteamAccountPanel() {
           SteamCMD keeps its own login session afterwards.
         </p>
 
-        {account?.loggedIn && !busy && login.phase !== 'need-code' ? (
+        {account?.loggedIn && !busy && login.phase !== 'need-code' && !asking ? (
           <div className="row" style={{ gap: 8 }}>
             <span className="chip ok">Logged in</span>
             <b>{account.user}</b>
@@ -147,7 +145,7 @@ export function SteamAccountPanel() {
               </button>
             )}
             {account?.user && !busy && (
-              <button className="btn ghost sm" title="Forget this account" onClick={() => { setUser(''); setAsking(false); run(api.steamLogout()) }}>
+              <button className="btn ghost sm" title="Forget this account" onClick={() => { setUser(''); setPassword(''); setCode(''); run(api.steamLogout()) }}>
                 <LogOut size={12} /> Forget
               </button>
             )}

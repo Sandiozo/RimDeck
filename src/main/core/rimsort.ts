@@ -10,6 +10,19 @@ export function rimsortDir() {
   return join(homedir(), '.local', 'share', 'RimSort')
 }
 
+/** Rules keyed by lower-cased package id, including the ids inside loadAfter/loadBefore/incompatibleWith. */
+export function lowerRuleKeys(rules: Record<string, any> | null | undefined): RuleMap {
+  const out: RuleMap = {}
+  const lower = (o: any) => (o && typeof o === 'object' && !Array.isArray(o) ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k.toLowerCase(), v])) : o)
+  for (const [id, r] of Object.entries(rules ?? {})) {
+    if (!r || typeof r !== 'object') continue
+    const rule: any = { ...r }
+    for (const k of ['loadAfter', 'loadBefore', 'incompatibleWith']) if (k in rule) rule[k] = lower(rule[k])
+    out[id.toLowerCase()] = rule
+  }
+  return out
+}
+
 async function json(file: string): Promise<any> {
   try {
     return JSON.parse(await readFile(file, 'utf8'))
@@ -59,10 +72,8 @@ export async function importFromRimSort(): Promise<RimSortImport> {
   const ignore = await json(join(dir, 'dbs', 'ignore.json'))
   const instance = settings?.current_instance_path || join(dir, 'instances', 'Default')
   const metaByPath = await readAuxDb(join(instance, 'aux_metadata.db'))
-  const userRules: RuleMap = {}
-  for (const [id, r] of Object.entries<any>(rules?.rules ?? {})) userRules[id.toLowerCase()] = r
   return {
-    userRules,
+    userRules: lowerRuleKeys(rules?.rules),
     ignored: (ignore?.ignored_mods ?? []).map((s: string) => s.toLowerCase()),
     metaByPath,
     found: !!(settings || rules || ignore),
